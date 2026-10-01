@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import ReportView from '../components/ReportView';
-import CoachPanel from '../components/CoachPanel';
+import SendToChat from '../components/SendToChat';
 import SectionCard from '../components/SectionCard';
 import { toast } from '../components/Toast';
 import { useEventsBetween, useLogsOn, useNow, useSpheres } from '../lib/hooks';
@@ -11,29 +11,11 @@ import { addDays, fmtDayLong, fmtWeekRange, weekday, weekStartOf } from '../lib/
 
 type Tab = 'day' | 'week';
 
-function AiBox({ report }: { report: Record<string, unknown> }) {
-  const text = JSON.stringify(report, null, 1);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(text); toast('Скопировано'); }
-    catch { toast('Не удалось скопировать — выдели текст вручную'); }
-  };
-  return (
-    <div className="ai-box">
-      <div className="ai-head">
-        <p className="hint">Это получит ИИ-коуч: данные с подписями и единицами плюс отклонения, посчитанные по правилам плана. Уже сейчас можно вставить в любой чат с нейросетью.</p>
-        <button type="button" className="btn ghost small" onClick={copy}>Копировать</button>
-      </div>
-      <pre className="ai-pre">{text}</pre>
-    </div>
-  );
-}
-
 export default function ReportsPage() {
   const now = useNow();
   const [tab, setTab] = useState<Tab>(() => (location.hash.includes('/week') || weekday(now.date) === 7 ? 'week' : 'day'));
   const [date, setDate] = useState(now.date);
   const [week, setWeek] = useState(weekStartOf(now.date));
-  const [showAi, setShowAi] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const report = useLiveQuery(async () => {
@@ -87,7 +69,6 @@ export default function ReportsPage() {
           )}
         </div>
         <span className="spacer" />
-        <button type="button" className={'btn ghost small' + (showAi ? ' is-pressed' : '')} aria-pressed={showAi} onClick={() => setShowAi((v) => !v)}>Для нейросети</button>
         <button type="button" className="btn primary small" onClick={pdf} disabled={!report || busy}>{busy ? 'Собираю…' : 'Скачать PDF'}</button>
       </div>
 
@@ -97,9 +78,9 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <CoachPanel kind={tab} date={tab === 'day' ? date : week} />
+      <SendToChat kind={tab} date={tab === 'day' ? date : week} />
 
-      {!report ? <p className="muted">Собираю отчёт…</p> : showAi ? <AiBox report={report} /> : <ReportView report={report} />}
+      {!report ? <p className="muted">Собираю отчёт…</p> : <ReportView report={report} />}
     </div>
   );
 }

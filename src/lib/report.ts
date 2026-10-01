@@ -163,7 +163,7 @@ export interface DayData {
   flags: Flags;
 }
 
-function dayData(b: Bundle, date: string): DayData {
+export function dayData(b: Bundle, date: string): DayData {
   const sections = resolveSections(b.cfg);
   const dayEvents = b.events.filter((e) => e.date === date);
   const logs = new Map(b.logs.filter((l) => l.date === date).map((l) => [l.section, l]));
@@ -327,7 +327,8 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
 
   // Работа, учёба, шахматы, цифра
   const workH = nums('work', 'hours');
-  const work: Obj = { 'часов': r1(sum(workH)), 'перерывы с движением, дней': `${count('work', 'breaks', true)} из ${E('work').filter((v) => !empty(v.breaks)).length || E('work').length}` };
+  const breaksMarked = E('work').filter((v) => !empty(v.breaks)).length;
+  const work: Obj = { 'часов': r1(sum(workH)), 'перерывы с движением': breaksMarked ? `${count('work', 'breaks', true)} из ${breaksMarked} отмеченных дней` : 'не отмечались' };
   const ege: Obj = { 'минут': sum(nums('ege', 'minutes')), 'вариантов решено': sum(nums('ege', 'variants')), 'первая часть, дней': count('ege', 'part1', true) };
   const tactics = nums('chess', 'tactics');
   const chess: Obj = {
@@ -413,6 +414,25 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
   };
 }
 
+const flagKey = (w: string) => w.replace(/[\d,.~:]+/g, '#');
+
+/** Грубые нарушения правил плана — жёсткий тон даже с первого раза */
+const SERIOUS = /Отбой|Тренировка по плану|Фастфуд не в среду|Сладкое в день фастфуда|Сладкое больше нормы|YouTube|War Thunder|Ice Tea|Квас/;
+
+/**
+ * Отклонения дня с тяжестью для коуча. Серьёзно — грубое нарушение правила плана
+ * или срыв повторился 2+ раза за 7 дней. Остальное — мелочь (единичный небольшой промах).
+ */
+export function classifiedWarnings(b: Bundle, date: string): Record<string, unknown>[] {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(date, i - 6));
+  const counts = new Map<string, number>();
+  for (const d of days) for (const w of dayData(b, d).flags.warn) counts.set(flagKey(w), (counts.get(flagKey(w)) ?? 0) + 1);
+  return dayData(b, date).flags.warn.map((w) => {
+    const n = counts.get(flagKey(w)) ?? 1;
+    return { 'что': w, 'тяжесть': SERIOUS.test(w) || n >= 2 ? 'серьёзно' : 'мелочь', 'раз за 7 дней': n };
+  });
+}
+
 /** Повторяющиеся срывы за 7 дней до даты включительно (бандл должен покрывать эти дни) */
 export function recentRepeats(b: Bundle, date: string): string[] {
   const days = Array.from({ length: 7 }, (_, i) => addDays(date, i - 6));
@@ -424,7 +444,7 @@ function collectDayWarnings(all: { date: string; flags: Flags }[]): string[] {
   const counts = new Map<string, { days: string[]; example: string }>();
   for (const x of all) {
     for (const w of x.flags.warn) {
-      const key = w.replace(/[\d,.~:]+/g, '#');
+      const key = flagKey(w);
       const cur = counts.get(key) ?? { days: [], example: w };
       cur.days.push(WD_SHORT[weekday(x.date) - 1]);
       counts.set(key, cur);

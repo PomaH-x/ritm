@@ -208,7 +208,7 @@ const SEED_TEMPLATE: [number, string, string, string, string][] = [
 let seeding: Promise<void> | null = null;
 
 export function ensureSeed(): Promise<void> {
-  if (!seeding) seeding = doSeed().then(seedV2).then(seedV3);
+  if (!seeding) seeding = doSeed().then(seedV2).then(seedV3).then(seedV4);
   return seeding;
 }
 
@@ -269,6 +269,14 @@ async function seedV3() {
   const cfg = await getSectionsConfig();
   if (sport && !cfg.links.sport) await saveSectionsConfig({ ...cfg, links: { ...cfg.links, sport: sport.id } });
   await db.kv.put({ key: 'seededV3', value: true, updatedAt: now });
+}
+
+/** Коуч внутри приложения убран: стираем его настройки (адрес скрипта и секрет) — так это доедет и до второго устройства */
+async function seedV4() {
+  if (await db.kv.get('seededV4')) return;
+  const now = Date.now();
+  if (await db.kv.get('coach')) await db.kv.put({ key: 'coach', value: null, updatedAt: now });
+  await db.kv.put({ key: 'seededV4', value: true, updatedAt: now });
 }
 
 // ---------- Учёт по дням ----------
