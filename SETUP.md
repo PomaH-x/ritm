@@ -32,3 +32,14 @@
 
 Google выдаёт доступ на час. Пока он действует, синхронизация идёт сама (при открытии, после правок,
 при возвращении в приложение). Когда кнопка стала жёлтой «Синхронизировать» — одно нажатие.
+
+## 4. ИИ-коуч (GitHub Models)
+
+1. https://github.com/settings/personal-access-tokens/new
+2. Token name: «Ритм коуч», Expiration — максимальный срок.
+3. Repository access: Public repositories.
+4. Permissions → Account permissions → **Models: Read-only**. Больше ничего не нужно.
+5. Generate token → скопировать `github_pat_…`.
+6. В приложении: Настройки → ИИ-коуч → GitHub Models → вставить ключ → «Сохранить и проверить».
+
+Токен не вставлять в код и не загружать в репозиторий.

@@ -10,7 +10,7 @@ import { EMPTY_CONFIG, resolveSections } from './sections';
 import { autoValue } from './auto';
 import { exerciseDone, fmtTarget, setsOf, sportDayStatus, targetFor } from './sport';
 import { dur, weekProgress } from './stats';
-import { addDays, fmtTime, fmtWeekRange, parseISODate, WD_LONG, WD_SHORT, weekday, weekDays } from './time';
+import { addDays, fmtTime, fmtWeekRange, parseISODate, plural, WD_LONG, WD_SHORT, weekday, weekDays } from './time';
 
 export interface Bundle {
   logs: LogEntry[];
@@ -62,6 +62,7 @@ const toMin = (s: unknown) => { const m = typeof s === 'string' ? /^(\d{1,2}):(\
 const bedAbs = (s: unknown) => { const m = toMin(s); return m == null ? null : m < 12 * 60 ? m + 1440 : m; };
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+const times = (n: number) => `${n} ${plural(n, 'раз', 'раза', 'раз')}`;
 const empty = (v: unknown) => v === undefined || v === null || v === '';
 
 function outValue(f: FieldDef, v: unknown): unknown {
@@ -268,9 +269,9 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
     const pct = Math.round((done / s.normTarget) * 100);
     const isMin = s.normKind === 'minutes';
     norms[s.name] = {
-      'цель': isMin ? `${hrs(s.normTarget)} ч` : `${s.normTarget} раз`,
-      'сделано': isMin ? `${hrs(done)} ч` : `${done} раз`,
-      ...(p.planned > 0 ? { 'стоит в расписании, не отмечено': isMin ? `${hrs(p.planned)} ч` : `${p.planned} раз` } : {}),
+      'цель': isMin ? `${hrs(s.normTarget)} ч` : times(s.normTarget),
+      'сделано': isMin ? `${hrs(done)} ч` : times(done),
+      ...(p.planned > 0 ? { 'стоит в расписании, не отмечено': isMin ? `${hrs(p.planned)} ч` : times(p.planned) } : {}),
       'выполнение': `${pct}%`,
     };
     if (done >= s.normTarget) good.push(`Норма «${s.name}» выполнена (${pct}%)`);
@@ -410,6 +411,12 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
     'отклонения от плана': [...warn, ...collectDayWarnings(all)],
     'получилось по плану': good,
   };
+}
+
+/** Повторяющиеся срывы за 7 дней до даты включительно (бандл должен покрывать эти дни) */
+export function recentRepeats(b: Bundle, date: string): string[] {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(date, i - 6));
+  return collectDayWarnings(days.map((d) => ({ date: d, ...dayData(b, d) })));
 }
 
 /** Повторяющиеся дневные срывы — одной строкой, чтобы нейросеть видела закономерность */

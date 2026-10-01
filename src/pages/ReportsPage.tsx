@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import ReportView from '../components/ReportView';
+import CoachPanel from '../components/CoachPanel';
 import SectionCard from '../components/SectionCard';
 import { toast } from '../components/Toast';
 import { useEventsBetween, useLogsOn, useNow, useSpheres } from '../lib/hooks';
@@ -95,6 +96,8 @@ export default function ReportsPage() {
           <SectionCard def={WEEKLY_SECTION} date={week} stored={weekLogs.get('weekly')} ctx={{ dayEvents: weekEvents, spheres }} hideGear onEditFields={() => {}} />
         </div>
       )}
+
+      <CoachPanel kind={tab} date={tab === 'day' ? date : week} />
 
       {!report ? <p className="muted">Собираю отчёт…</p> : showAi ? <AiBox report={report} /> : <ReportView report={report} />}
     </div>

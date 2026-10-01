@@ -4,6 +4,7 @@ import { useSettings } from '../lib/hooks';
 import { fmtTime, parseTime, toISODate } from '../lib/time';
 import DayPicker from '../components/DayPicker';
 import SyncSettings from '../components/SyncSettings';
+import CoachSettings from '../components/CoachSettings';
 import type { Settings } from '../types';
 import { toast } from '../components/Toast';
 import { ask } from '../components/Confirm';
@@ -117,6 +118,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <CoachSettings />
 
       <SyncSettings />
 

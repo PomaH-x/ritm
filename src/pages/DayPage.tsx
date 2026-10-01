@@ -7,6 +7,7 @@ import FieldsEditor, { NewSectionModal } from '../components/FieldsEditor';
 import ProgramEditor, { HarderModal } from '../components/ProgramEditor';
 import { saveSectionsConfig } from '../db';
 import SyncButton from '../components/SyncButton';
+import CoachPanel from '../components/CoachPanel';
 import { useEventsBetween, useLogsOn, useNow, useProgram, useSectionLogs, useSectionsConfig, useSpheres } from '../lib/hooks';
 import { resolveSections } from '../lib/sections';
 import { addDays, fmtDayLong, weekday, weekStartOf } from '../lib/time';
@@ -83,6 +84,8 @@ export default function DayPage() {
         })}
         <TasksCard today={now.date} />
       </div>
+
+      <CoachPanel kind="day" date={date} />
 
       <div className="day-foot">
         <button type="button" className="btn ghost" onClick={() => setNewSection(true)}>Новый раздел</button>
