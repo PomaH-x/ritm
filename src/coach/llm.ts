@@ -59,7 +59,8 @@ async function viaGas(cfg: CoachConfig, payload: Record<string, unknown>): Promi
   try {
     return JSON.parse(text) as { status: number; body: string };
   } catch {
-    throw new LlmError('Скрипт ответил не так, как ожидалось. Проверь, что развёрнута последняя версия кода и доступ — «Все».');
+    const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    throw new LlmError(`Скрипт ответил не так, как ожидалось (код ${r.status}): ${plain.slice(0, 180) || 'пусто'}. Проверь, что развёрнута последняя версия и доступ — «Все».`);
   }
 }
 
@@ -70,6 +71,7 @@ export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 1400): 
   if (cfg.provider === 'gas') {
     const res = await viaGas(cfg, { body: { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens } });
     if (res.status === 401 && res.body === 'Неверный секрет') throw new LlmError('Секрет в приложении не совпадает с APP_SECRET в свойствах скрипта.');
+    if (res.status === 502) throw new LlmError(res.body);
     if (res.status !== 200) throw new LlmError(explain(res.status, res.body, { ...cfg, provider: 'github' }));
     if (res.body === 'Ритм: посредник работает') throw new LlmError('Скрипт получил запрос без данных (сработал doGet). Проверь, что развёрнута последняя версия кода.');
     return parseAnswer(res.body);
