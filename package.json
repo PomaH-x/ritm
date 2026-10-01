@@ -1,0 +1,30 @@
+{
+  "name": "ritm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc -b && vite build",
+    "build:single": "vite build --config vite.single.config.ts",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@fontsource-variable/onest": "^5.1.0",
+    "dexie": "^4.0.8",
+    "dexie-react-hooks": "^1.1.7",
+    "pdfmake": "^0.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/pdfmake": "^0.3.3",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "~5.5.4",
+    "vite": "^5.4.8",
+    "vite-plugin-pwa": "^0.20.5",
+    "vite-plugin-singlefile": "^2.0.2"
+  }
+}
