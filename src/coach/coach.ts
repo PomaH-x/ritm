@@ -152,7 +152,7 @@ export async function ask(kind: Kind, date: string, question: string): Promise<v
     ...cur.thread.slice(-3).flatMap((t) => [{ role: 'user', content: t.q } as Msg, { role: 'assistant', content: t.a } as Msg]),
     { role: 'user', content: question },
   ];
-  const raw = await chat(msgs, cfg, 1800);
+  const raw = await chat(msgs, cfg, 4000);
   const { text, proposals } = splitProposals(raw);
   await store(kind, date, { ...cur, thread: [...cur.thread, { q: question, a: text }], proposals: [...cur.proposals, ...proposals] });
 }

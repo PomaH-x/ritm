@@ -8,6 +8,8 @@ export interface CoachConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
+  /** Запасная модель — если основная перегружена или кончился её лимит */
+  fallbackModel?: string;
 }
 
 export const PROVIDERS: Record<Provider, { name: string; baseUrl: string; model: string; keyHint: string; keyUrl: string }> = {
@@ -17,7 +19,7 @@ export const PROVIDERS: Record<Provider, { name: string; baseUrl: string; model:
   custom: { name: 'Свой адрес', baseUrl: '', model: '', keyHint: 'ключ', keyUrl: '' },
 };
 
-export const DEFAULT_COACH: CoachConfig = { provider: 'gas', apiKey: '', model: PROVIDERS.gas.model, baseUrl: '' };
+export const DEFAULT_COACH: CoachConfig = { provider: 'gas', apiKey: '', model: PROVIDERS.gas.model, baseUrl: '', fallbackModel: 'gemini-flash-lite-latest' };
 
 /** Модели Gemini «думают» перед ответом, и мысли съедают лимит длины — просим думать недолго */
 function extra(model: string): Record<string, unknown> {
@@ -46,7 +48,8 @@ function explain(status: number, body: string, c: CoachConfig): string {
   if (status === 403) return 'Доступ запрещён. Обычно это значит, что сервис не работает из твоей страны или сети, или у ключа нет нужного права.';
   if (status === 404) return `Модель «${c.model}» не найдена. Выбери другую в настройках.`;
   if (status === 413) return 'Запрос получился слишком большим для этой модели.';
-  if (status === 429) return 'Лимит запросов на сегодня исчерпан. Попробуй позже или выбери другую модель.';
+  if (status === 429) return 'Лимит запросов исчерпан (в минуту или на сегодня). Попробуй позже или выбери другую модель.';
+  if (status === 503 || status === 500 || status === 504) return 'Нейросеть сейчас перегружена — в часы пик так бывает. Попробуй через пару минут.';
   return `Сервис ответил ошибкой ${status}. ${body.slice(0, 200)}`;
 }
 
@@ -73,34 +76,65 @@ async function viaGas(cfg: CoachConfig, payload: Record<string, unknown>): Promi
   }
 }
 
-export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 3000): Promise<string> {
-  const cfg = c ?? (await getCoachConfig());
-  if (!cfg.apiKey) throw new LlmError('Коуч не подключён: добавь ключ в Настройках.');
-  if (!navigator.onLine) throw new LlmError('Нет интернета. Разбор можно запросить, когда появится сеть.');
+/** Один запрос к модели: код ответа и тело */
+async function once(cfg: CoachConfig, model: string, messages: Msg[], maxTokens: number): Promise<{ status: number; body: string }> {
+  const body = { model, messages, temperature: 0.5, max_tokens: maxTokens, ...extra(model) };
   if (cfg.provider === 'gas') {
-    const res = await viaGas(cfg, { body: { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens, ...extra(cfg.model) } });
+    const res = await viaGas(cfg, { body });
     if (res.status === 401 && res.body === 'Неверный секрет') throw new LlmError('Секрет в приложении не совпадает с APP_SECRET в свойствах скрипта.');
     if (res.status === 502) throw new LlmError(res.body);
-    if (res.status !== 200) throw new LlmError(explain(res.status, res.body, cfg));
-    if (res.body === 'Ритм: посредник работает') throw new LlmError('Скрипт получил запрос без данных (сработал doGet). Проверь, что развёрнута последняя версия кода.');
-    return parseAnswer(res.body);
+    if (res.status === 200 && res.body === 'Ритм: посредник работает') throw new LlmError('Скрипт получил запрос без данных (сработал doGet). Проверь, что развёрнута последняя версия кода.');
+    return res;
   }
-  let r: Response;
   try {
-    r = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const r = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({ model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens, ...extra(cfg.model) }),
+      body: JSON.stringify(body),
     });
+    return { status: r.status, body: await r.text() };
   } catch {
     throw new LlmError('Сервис недоступен из браузера или из твоей сети (запрос не прошёл). Попробуй другого провайдера.');
   }
-  const text = await r.text();
-  if (!r.ok) throw new LlmError(explain(r.status, text, cfg));
-  return parseAnswer(text);
 }
 
-function parseAnswer(text: string): string {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const busy = (st: number) => st === 503 || st === 500 || st === 504;
+
+/**
+ * Запрос с повторами: при перегрузке ждём и пробуем снова, затем переходим на запасную модель.
+ * Если ответ оборвался по длине, повторяем один раз с большим запасом.
+ */
+export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 8000): Promise<string> {
+  const cfg = c ?? (await getCoachConfig());
+  if (!cfg.apiKey) throw new LlmError('Коуч не подключён: добавь ключ в Настройках.');
+  if (!navigator.onLine) throw new LlmError('Нет интернета. Разбор можно запросить, когда появится сеть.');
+  const models = [cfg.model, cfg.fallbackModel].filter((m, i, a): m is string => !!m && a.indexOf(m) === i);
+  let last: { status: number; body: string; model: string } | null = null;
+  for (const model of models) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await once(cfg, model, messages, maxTokens);
+      if (res.status === 200) {
+        const a = parseAnswer(res.body);
+        if (a.finish !== 'length' || !a.text) return a.text;
+        const again = await once(cfg, model, messages, maxTokens * 2);
+        if (again.status === 200) {
+          const b = parseAnswer(again.body);
+          return b.finish === 'length' ? `${b.text}\n\n*Ответ оборвался — нажми «Обновить разбор».*` : b.text;
+        }
+        return `${a.text}\n\n*Ответ оборвался — нажми «Обновить разбор».*`;
+      }
+      last = { ...res, model };
+      if (busy(res.status) && attempt < 2) { await sleep(attempt === 0 ? 2500 : 6000); continue; }
+      break;
+    }
+    // На запасную модель переходим только при перегрузке или исчерпанном лимите
+    if (!last || !(busy(last.status) || last.status === 429)) break;
+  }
+  throw new LlmError(explain(last!.status, last!.body, { ...cfg, model: last!.model }));
+}
+
+function parseAnswer(text: string): { text: string; finish?: string } {
   type Part = string | { text?: string; type?: string };
   let j: { choices?: { message?: { content?: Part | Part[] | null; refusal?: string | null }; text?: string; finish_reason?: string }[]; error?: { message?: string } };
   try { j = JSON.parse(text); } catch {
@@ -111,8 +145,9 @@ function parseAnswer(text: string): string {
   const c = ch?.message?.content;
   const flat = (x: Part): string => (typeof x === 'string' ? x : x.text ?? '');
   const out = (Array.isArray(c) ? c.map(flat).join('') : c != null ? flat(c) : (ch?.text ?? '')).trim();
-  if (out) return out;
+  if (out) return { text: out, finish: ch?.finish_reason };
   if (ch?.message?.refusal) throw new LlmError(`Модель отказалась отвечать: ${ch.message.refusal}`);
+  if (ch?.finish_reason === 'length') return { text: '', finish: 'length' };
   throw new LlmError(`Пустой ответ модели${ch?.finish_reason ? ` (finish_reason: ${ch.finish_reason})` : ''}. Начало ответа: ${text.slice(0, 200)}`);
 }
 

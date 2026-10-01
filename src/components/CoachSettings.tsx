@@ -25,7 +25,7 @@ export default function CoachSettings() {
     setState({ busy: true, msg: '' });
     try {
       await saveCoachConfig(c);
-      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], c, 400);
+      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], { ...c, fallbackModel: undefined }, 1000);
       setModels(await listModels(c));
       setState({ busy: false, ok: true, msg: `Работает. Модель ответила: «${a.slice(0, 40)}»` });
     } catch (e) {
@@ -71,6 +71,10 @@ export default function CoachSettings() {
         <span>Модель</span>
         <input value={c.model} list="coach-models" onChange={(e) => setC({ ...c, model: e.target.value.trim() })} />
         <datalist id="coach-models">{models.map((m) => <option key={m} value={m} />)}</datalist>
+      </label>
+      <label className="field">
+        <span>Запасная модель — если основная перегружена</span>
+        <input value={c.fallbackModel ?? ''} list="coach-models" placeholder="можно оставить пустым" onChange={(e) => setC({ ...c, fallbackModel: e.target.value.trim() })} />
       </label>
       <div className="btn-row">
         <button type="button" className="btn primary" disabled={state.busy || !c.apiKey || !c.model} onClick={check}>{state.busy ? 'Проверяю…' : 'Сохранить и проверить'}</button>
