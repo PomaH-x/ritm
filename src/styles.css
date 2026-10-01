@@ -589,3 +589,4 @@ a.btn { text-decoration: none; color: inherit; }
 .coach-ask { display: flex; gap: 8px; }
 .coach-ask input { flex: 1; min-height: 36px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); outline: none; }
 .coach-ask input:focus { border-color: var(--focus); }
+.gas-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
