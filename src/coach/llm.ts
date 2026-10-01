@@ -71,6 +71,7 @@ export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 1400): 
     const res = await viaGas(cfg, { body: { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens } });
     if (res.status === 401 && res.body === 'Неверный секрет') throw new LlmError('Секрет в приложении не совпадает с APP_SECRET в свойствах скрипта.');
     if (res.status !== 200) throw new LlmError(explain(res.status, res.body, { ...cfg, provider: 'github' }));
+    if (res.body === 'Ритм: посредник работает') throw new LlmError('Скрипт получил запрос без данных (сработал doGet). Проверь, что развёрнута последняя версия кода.');
     return parseAnswer(res.body);
   }
   let r: Response;
@@ -89,14 +90,19 @@ export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 1400): 
 }
 
 function parseAnswer(text: string): string {
-  try {
-    const j = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
-    const out = j.choices?.[0]?.message?.content?.trim();
-    if (!out) throw new Error();
-    return out;
-  } catch {
-    throw new LlmError('Нейросеть вернула пустой или странный ответ.');
+  type Part = string | { text?: string; type?: string };
+  let j: { choices?: { message?: { content?: Part | Part[] | null; refusal?: string | null }; text?: string; finish_reason?: string }[]; error?: { message?: string } };
+  try { j = JSON.parse(text); } catch {
+    throw new LlmError(`Неожиданный ответ (не JSON): ${text.slice(0, 200)}`);
   }
+  if (j.error?.message) throw new LlmError(`Нейросеть вернула ошибку: ${j.error.message}`);
+  const ch = j.choices?.[0];
+  const c = ch?.message?.content;
+  const flat = (x: Part): string => (typeof x === 'string' ? x : x.text ?? '');
+  const out = (Array.isArray(c) ? c.map(flat).join('') : c != null ? flat(c) : (ch?.text ?? '')).trim();
+  if (out) return out;
+  if (ch?.message?.refusal) throw new LlmError(`Модель отказалась отвечать: ${ch.message.refusal}`);
+  throw new LlmError(`Пустой ответ модели${ch?.finish_reason ? ` (finish_reason: ${ch.finish_reason})` : ''}. Начало ответа: ${text.slice(0, 200)}`);
 }
 
 /** Список моделей GitHub Models — чтобы выбирать из того, что реально доступно */

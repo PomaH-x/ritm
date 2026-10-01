@@ -26,7 +26,7 @@ export default function CoachSettings() {
     setState({ busy: true, msg: '' });
     try {
       await saveCoachConfig(c);
-      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], c, 10);
+      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], c, 60);
       if (c.provider === 'github' || c.provider === 'gas') setModels(await listGithubModels(c));
       setState({ busy: false, ok: true, msg: `Работает. Модель ответила: «${a.slice(0, 40)}»` });
     } catch (e) {

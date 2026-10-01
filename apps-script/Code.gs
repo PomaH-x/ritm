@@ -42,3 +42,17 @@ function reply(status, body) {
 function authorize() {
   UrlFetchApp.fetch('https://models.github.ai/catalog/models', { muteHttpExceptions: true });
 }
+
+/** Проверка без приложения: выбери testChat → «Выполнить» → смотри «Журнал выполнения» */
+function testChat() {
+  const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  Logger.log('API_KEY задан: ' + (key ? 'да, начинается с ' + key.slice(0, 11) : 'НЕТ'));
+  Logger.log('APP_SECRET задан: ' + (PropertiesService.getScriptProperties().getProperty('APP_SECRET') ? 'да' : 'НЕТ'));
+  const res = UrlFetchApp.fetch(API_URL, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + key },
+    payload: JSON.stringify({ model: 'openai/gpt-4.1', messages: [{ role: 'user', content: 'Ответь одним словом: готов?' }], max_tokens: 60 }),
+  });
+  Logger.log('Код ответа: ' + res.getResponseCode());
+  Logger.log(res.getContentText().slice(0, 1500));
+}
