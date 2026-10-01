@@ -1,7 +1,7 @@
 /** Подключение к нейросети. Все провайдеры — в формате OpenAI Chat Completions. */
 import { db } from '../db';
 
-export type Provider = 'gas' | 'github' | 'groq' | 'gemini' | 'custom';
+export type Provider = 'gas' | 'groq' | 'gemini' | 'custom';
 
 export interface CoachConfig {
   provider: Provider;
@@ -11,17 +11,26 @@ export interface CoachConfig {
 }
 
 export const PROVIDERS: Record<Provider, { name: string; baseUrl: string; model: string; keyHint: string; keyUrl: string }> = {
-  gas: { name: 'GitHub через Google', baseUrl: '', model: 'openai/gpt-4.1', keyHint: 'секрет приложения', keyUrl: '' },
-  github: { name: 'GitHub Models', baseUrl: 'https://models.github.ai/inference', model: 'openai/gpt-4.1', keyHint: 'github_pat_…', keyUrl: 'https://github.com/settings/personal-access-tokens/new' },
+  gas: { name: 'Через мой скрипт Google', baseUrl: '', model: 'gemini-3.8-flash', keyHint: 'секрет приложения', keyUrl: '' },
   groq: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyHint: 'gsk_…', keyUrl: 'https://console.groq.com/keys' },
-  gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', keyHint: 'AIza…', keyUrl: 'https://aistudio.google.com/apikey' },
+  gemini: { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', keyHint: 'AIza…', keyUrl: 'https://aistudio.google.com/apikey' },
   custom: { name: 'Свой адрес', baseUrl: '', model: '', keyHint: 'ключ', keyUrl: '' },
 };
 
 export const DEFAULT_COACH: CoachConfig = { provider: 'gas', apiKey: '', model: PROVIDERS.gas.model, baseUrl: '' };
 
+/** Модели Gemini «думают» перед ответом, и мысли съедают лимит длины — просим думать недолго */
+function extra(model: string): Record<string, unknown> {
+  return /gemini/i.test(model) ? { reasoning_effort: 'low' } : {};
+}
+
 export async function getCoachConfig(): Promise<CoachConfig> {
-  return { ...DEFAULT_COACH, ...(((await db.kv.get('coach'))?.value as Partial<CoachConfig>) ?? {}) };
+  const c = { ...DEFAULT_COACH, ...(((await db.kv.get('coach'))?.value as Partial<CoachConfig>) ?? {}) } as CoachConfig;
+  // GitHub Models закрыт 30.07.2026 — старые настройки переводим на скрипт
+  if ((c.provider as string) === 'github') return { ...c, provider: 'gas', apiKey: '', model: PROVIDERS.gas.model, baseUrl: '' };
+  // gemini-2.5-flash закрыт для новых пользователей — переводим на актуальную модель
+  if (c.provider === 'gas' && (c.model.startsWith('openai/') || c.model === 'gemini-2.5-flash')) c.model = PROVIDERS.gas.model;
+  return c;
 }
 
 export async function saveCoachConfig(c: CoachConfig) {
@@ -33,7 +42,7 @@ export interface Msg { role: 'system' | 'user' | 'assistant'; content: string }
 export class LlmError extends Error {}
 
 function explain(status: number, body: string, c: CoachConfig): string {
-  if (status === 401) return 'Ключ не подошёл. Проверь, что он скопирован целиком' + (c.provider === 'github' ? ' и у токена есть право Models: Read.' : '.');
+  if (status === 401 || (status === 400 && /API key/i.test(body))) return 'Ключ нейросети не подошёл. Проверь, что он скопирован целиком' + (c.provider === 'gas' ? ' в свойство API_KEY скрипта.' : '.');
   if (status === 403) return 'Доступ запрещён. Обычно это значит, что сервис не работает из твоей страны или сети, или у ключа нет нужного права.';
   if (status === 404) return `Модель «${c.model}» не найдена. Выбери другую в настройках.`;
   if (status === 413) return 'Запрос получился слишком большим для этой модели.';
@@ -64,15 +73,15 @@ async function viaGas(cfg: CoachConfig, payload: Record<string, unknown>): Promi
   }
 }
 
-export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 1400): Promise<string> {
+export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 3000): Promise<string> {
   const cfg = c ?? (await getCoachConfig());
   if (!cfg.apiKey) throw new LlmError('Коуч не подключён: добавь ключ в Настройках.');
   if (!navigator.onLine) throw new LlmError('Нет интернета. Разбор можно запросить, когда появится сеть.');
   if (cfg.provider === 'gas') {
-    const res = await viaGas(cfg, { body: { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens } });
+    const res = await viaGas(cfg, { body: { model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens, ...extra(cfg.model) } });
     if (res.status === 401 && res.body === 'Неверный секрет') throw new LlmError('Секрет в приложении не совпадает с APP_SECRET в свойствах скрипта.');
     if (res.status === 502) throw new LlmError(res.body);
-    if (res.status !== 200) throw new LlmError(explain(res.status, res.body, { ...cfg, provider: 'github' }));
+    if (res.status !== 200) throw new LlmError(explain(res.status, res.body, cfg));
     if (res.body === 'Ритм: посредник работает') throw new LlmError('Скрипт получил запрос без данных (сработал doGet). Проверь, что развёрнута последняя версия кода.');
     return parseAnswer(res.body);
   }
@@ -81,7 +90,7 @@ export async function chat(messages: Msg[], c?: CoachConfig, maxTokens = 1400): 
     r = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify({ model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens }),
+      body: JSON.stringify({ model: cfg.model, messages, temperature: 0.5, max_tokens: maxTokens, ...extra(cfg.model) }),
     });
   } catch {
     throw new LlmError('Сервис недоступен из браузера или из твоей сети (запрос не прошёл). Попробуй другого провайдера.');
@@ -107,19 +116,20 @@ function parseAnswer(text: string): string {
   throw new LlmError(`Пустой ответ модели${ch?.finish_reason ? ` (finish_reason: ${ch.finish_reason})` : ''}. Начало ответа: ${text.slice(0, 200)}`);
 }
 
-/** Список моделей GitHub Models — чтобы выбирать из того, что реально доступно */
-export async function listGithubModels(cfg: CoachConfig): Promise<string[]> {
+/** Список доступных моделей — чтобы выбирать из того, что реально есть */
+export async function listModels(cfg: CoachConfig): Promise<string[]> {
   try {
-    let j: { id: string; supported_output_modalities?: string[] }[];
+    let raw: unknown;
     if (cfg.provider === 'gas') {
       const res = await viaGas(cfg, { action: 'models' });
       if (res.status !== 200) return [];
-      j = JSON.parse(res.body);
+      raw = JSON.parse(res.body);
     } else {
-      const r = await fetch('https://models.github.ai/catalog/models', { headers: { Authorization: `Bearer ${cfg.apiKey}` } });
+      const r = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/models`, { headers: { Authorization: `Bearer ${cfg.apiKey}` } });
       if (!r.ok) return [];
-      j = await r.json();
+      raw = await r.json();
     }
-    return j.filter((m) => !m.supported_output_modalities || m.supported_output_modalities.includes('text')).map((m) => m.id).sort();
+    const list = (Array.isArray(raw) ? raw : (raw as { data?: unknown[] }).data ?? []) as { id: string }[];
+    return list.map((m) => m.id.replace(/^models\//, '')).filter((id) => !/embedding|imagen|veo|tts|audio|image|aqa/i.test(id)).sort();
   } catch { return []; }
 }

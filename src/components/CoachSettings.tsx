@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { chat, getCoachConfig, listGithubModels, PROVIDERS, saveCoachConfig, type CoachConfig, type Provider } from '../coach/llm';
+import { chat, getCoachConfig, listModels, PROVIDERS, saveCoachConfig, type CoachConfig, type Provider } from '../coach/llm';
 import { GAS_CODE } from '../coach/gas';
 import { toast } from './Toast';
 
 const NOTES: Record<Provider, string> = {
-  gas: 'Запросы к GitHub Models идут через твой скрипт на Google: браузер напрямую к GitHub не пускают. Бесплатно. Токен GitHub хранится только в скрипте, в приложении — секрет для связи с ним.',
-  github: 'Бесплатно с твоим GitHub-аккаунтом, без карты. Лимит — десятки запросов в день, коучу хватает. Нужен токен с правом Models: Read-only.',
+  gas: 'Запросы идут через твой скрипт на серверах Google — так обходятся и ограничения браузера, и региональные. По умолчанию — бесплатный Google Gemini. Ключ нейросети хранится только в скрипте, в приложении — секрет для связи с ним.',
   groq: 'Бесплатно, без карты, очень быстро. Может не открываться из России без VPN.',
   gemini: 'Бесплатный лимит Google. Может не работать из России без VPN; запросы бесплатного тарифа Google может использовать для улучшения своих моделей.',
   custom: 'Любой сервис с API в формате OpenAI: адрес, ключ и модель.',
@@ -26,8 +25,8 @@ export default function CoachSettings() {
     setState({ busy: true, msg: '' });
     try {
       await saveCoachConfig(c);
-      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], c, 60);
-      if (c.provider === 'github' || c.provider === 'gas') setModels(await listGithubModels(c));
+      const a = await chat([{ role: 'user', content: 'Ответь одним словом по-русски: готов?' }], c, 400);
+      setModels(await listModels(c));
       setState({ busy: false, ok: true, msg: `Работает. Модель ответила: «${a.slice(0, 40)}»` });
     } catch (e) {
       setState({ busy: false, ok: false, msg: e instanceof Error ? e.message : String(e) });
@@ -94,7 +93,7 @@ function GasHelp() {
       <ol className="gas-steps">
         <li>script.google.com → «Новый проект», назови «Ритм коуч».</li>
         <li>Удали всё в редакторе и вставь код ниже, нажми «Сохранить».</li>
-        <li>Слева «Настройки проекта» (шестерёнка) → «Свойства скрипта» → добавь <b>API_KEY</b> = токен GitHub и <b>APP_SECRET</b> = секрет из поля ниже.</li>
+        <li>Слева «Настройки проекта» (шестерёнка) → «Свойства скрипта» → добавь <b>API_KEY</b> = ключ Gemini (AIza…) и <b>APP_SECRET</b> = секрет из поля ниже.</li>
         <li>В редакторе выбери функцию <b>authorize</b> → «Выполнить» → разреши доступ.</li>
         <li>«Начать развёртывание» → «Новое развёртывание» → тип «Веб-приложение», запуск от «Меня», доступ «Все» → «Развернуть» → скопируй URL.</li>
       </ol>

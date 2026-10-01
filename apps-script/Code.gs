@@ -1,15 +1,33 @@
 /**
  * Ритм — посредник для ИИ-коуча.
- * Браузер не может напрямую обратиться к GitHub Models, а этот скрипт работает на серверах Google
- * и пересылает запрос. Токен GitHub хранится только здесь, в свойствах скрипта.
+ * Скрипт работает на серверах Google и пересылает запросы нейросети, которая говорит на языке OpenAI API.
+ * По умолчанию — Google Gemini (бесплатный тариф). Ключ хранится только здесь.
  *
  * Свойства скрипта (Настройки проекта → Свойства скрипта):
- *   API_KEY    — токен GitHub (github_pat_…) с правом Models: Read-only
+ *   API_KEY    — ключ нейросети (для Gemini начинается с AIza…)
  *   APP_SECRET — секрет из настроек приложения «Ритм»
+ *   API_BASE   — необязательно; адрес другой совместимой нейросети, например https://api.groq.com/openai/v1
  */
-const API_URL = 'https://models.github.ai/inference/chat/completions';
-const MODELS_URL = 'https://models.github.ai/catalog/models';
-const GH_HEADERS = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+function base() {
+  return (PropertiesService.getScriptProperties().getProperty('API_BASE') || DEFAULT_BASE).replace(/\/$/, '');
+}
+
+/**
+ * Запрос к нейросети. Сначала ключ передаём как Bearer (так принято в формате OpenAI);
+ * если сервис его не принял — как x-goog-api-key (так Google принимает новые ключи вида AQ.…).
+ */
+function callApi(path, opts) {
+  const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  const url = base() + path;
+  const first = UrlFetchApp.fetch(url, Object.assign({}, opts, { muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + key } }));
+  const code = first.getResponseCode();
+  if ((code === 400 || code === 401 || code === 403) && url.indexOf('googleapis.com') >= 0) {
+    return UrlFetchApp.fetch(url, Object.assign({}, opts, { muteHttpExceptions: true, headers: { 'x-goog-api-key': key } }));
+  }
+  return first;
+}
 
 function doPost(e) {
   try {
@@ -24,10 +42,9 @@ function doPost(e) {
     const key = props.getProperty('API_KEY');
     if (!key) return reply(500, 'В свойствах скрипта не задан API_KEY');
 
-    const opts = { headers: Object.assign({ Authorization: 'Bearer ' + key }, GH_HEADERS), muteHttpExceptions: true };
     const res = req.action === 'models'
-      ? UrlFetchApp.fetch(MODELS_URL, Object.assign({ method: 'get' }, opts))
-      : UrlFetchApp.fetch(API_URL, Object.assign({ method: 'post', contentType: 'application/json', payload: JSON.stringify(req.body) }, opts));
+      ? callApi('/models', { method: 'get' })
+      : callApi('/chat/completions', { method: 'post', contentType: 'application/json', payload: JSON.stringify(req.body) });
     return reply(res.getResponseCode(), res.getContentText());
   } catch (err) {
     return reply(502, 'Ошибка в скрипте: ' + err);
@@ -45,28 +62,28 @@ function reply(status, body) {
 
 /** Запусти один раз вручную, чтобы Google попросил разрешение на внешние запросы */
 function authorize() {
-  UrlFetchApp.fetch(MODELS_URL, { muteHttpExceptions: true });
+  UrlFetchApp.fetch(base() + '/models', { muteHttpExceptions: true });
 }
 
 /** Диагностика: выбери diagnose → «Выполнить» → пришли «Журнал выполнения» */
 function diagnose() {
   const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  Logger.log('API_KEY: ' + (key ? key.slice(0, 11) + '…, длина ' + key.length : 'НЕТ'));
-  const body = JSON.stringify({ model: 'openai/gpt-4.1', messages: [{ role: 'user', content: 'Ответь одним словом: готов?' }], max_tokens: 60 });
-  const variants = [
-    ['1 без заголовков', {}],
-    ['2 версия 2022-11-28', { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }],
-    ['3 версия 2026-03-10', { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' }],
-  ];
-  variants.forEach(function (v) {
-    const r = UrlFetchApp.fetch(API_URL, {
-      method: 'post', contentType: 'application/json', muteHttpExceptions: true, followRedirects: false,
-      headers: Object.assign({ Authorization: 'Bearer ' + key }, v[1]), payload: body,
+  Logger.log('Версия скрипта: Gemini-2. Адрес: ' + base());
+  Logger.log('API_KEY: ' + (key ? key.slice(0, 3) + '…, длина ' + key.length : 'НЕТ'));
+  const ask = { model: 'gemini-3.8-flash', messages: [{ role: 'user', content: 'Ответь одним словом: готов?' }], max_tokens: 300 };
+  [['Bearer', { Authorization: 'Bearer ' + key }], ['x-goog-api-key', { 'x-goog-api-key': key }]].forEach(function (v) {
+    const r = UrlFetchApp.fetch(base() + '/chat/completions', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: v[1], payload: JSON.stringify(ask),
     });
-    const h = r.getHeaders();
-    Logger.log(v[0] + ': код ' + r.getResponseCode() + ', тип ' + (h['Content-Type'] || h['content-type'] || '?')
-      + (h['Location'] ? ', переадресация на ' + h['Location'] : '') + ', ответ: ' + r.getContentText().slice(0, 300));
+    Logger.log('Чат, ключ как ' + v[0] + ': код ' + r.getResponseCode() + ', ответ: ' + r.getContentText().slice(0, 400));
   });
-  const c = UrlFetchApp.fetch(MODELS_URL, { muteHttpExceptions: true, headers: Object.assign({ Authorization: 'Bearer ' + key }, GH_HEADERS) });
-  Logger.log('каталог моделей: код ' + c.getResponseCode() + ', ответ: ' + c.getContentText().slice(0, 200));
+  const n = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ parts: [{ text: 'Ответь одним словом: готов?' }] }] }),
+  });
+  Logger.log('Родной формат Gemini: код ' + n.getResponseCode() + ', ответ: ' + n.getContentText().slice(0, 300));
+  const m = callApi('/models', { method: 'get' });
+  let ids = [];
+  try { ids = JSON.parse(m.getContentText()).data.map(function (x) { return x.id.replace('models/', ''); }); } catch (err) {}
+  Logger.log('Модели: код ' + m.getResponseCode() + ', ' + (ids.length ? ids.filter(function (i) { return /gemini/i.test(i) && !/embedding|image|tts|audio|live/i.test(i); }).slice(0, 30).join(', ') : m.getContentText().slice(0, 300)));
 }
