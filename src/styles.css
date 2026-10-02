@@ -576,3 +576,28 @@ a.btn { text-decoration: none; color: inherit; }
 .send-titles h2 { font-size: 16.5px; }
 .send-ok { align-self: center; font-size: 13.5px; }
 .send-text { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font: 12.5px/1.5 ui-monospace, 'Cascadia Mono', Consolas, monospace; resize: vertical; white-space: pre-wrap; }
+
+/* ---------- Прогресс ---------- */
+.page.progress { max-width: 1200px; }
+.pg-grid { columns: 2; column-gap: 14px; }
+.pg-card { break-inside: avoid; margin-bottom: 14px; padding: 16px 16px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.pg-card h2 { font-size: 16.5px; margin-bottom: 4px; }
+.pg-sub { font-size: 14.5px; margin: 14px 0 2px; }
+.pg-stats { margin: 0 0 6px; font-size: 13.5px; color: var(--muted); }
+.pg-stats b { color: var(--text); font-weight: 650; }
+.pg-norm + .pg-norm { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.pg-select { margin: 4px 0 8px; }
+.chart { position: relative; width: 100%; touch-action: pan-y; }
+.chart svg { display: block; overflow: visible; user-select: none; }
+.chart-info { min-height: 20px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.chart-info i, .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.ch-grid { stroke: var(--line-soft); stroke-width: 1; }
+.ch-axis { fill: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.ch-ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.ch-ref-label { fill: var(--muted); font-size: 10.5px; }
+.ch-sel { fill: var(--raised); opacity: .7; }
+@media (max-width: 1000px) { .pg-grid { columns: 1; } }
+@media (max-width: 760px) { .rail-item { padding: 6px 2px; } .rail-item span { font-size: 10px; } }
+.seg button { white-space: nowrap; }
+.page.progress .page-head { flex-wrap: wrap; }

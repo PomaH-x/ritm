@@ -45,12 +45,12 @@ export function useMedia(query: string): boolean {
   return m;
 }
 
-export type Route = 'week' | 'day' | 'reports' | 'spheres' | 'settings';
+export type Route = 'week' | 'day' | 'reports' | 'progress' | 'spheres' | 'settings';
 
 export function useRoute(): [Route, (r: Route) => void] {
   const read = (): Route => {
     const h = location.hash.replace('#/', '').split('/')[0];
-    return h === 'spheres' || h === 'settings' || h === 'day' || h === 'reports' ? h : 'week';
+    return h === 'spheres' || h === 'settings' || h === 'day' || h === 'reports' || h === 'progress' ? h : 'week';
   };
   const [r, setR] = useState<Route>(read);
   useEffect(() => {

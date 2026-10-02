@@ -6,6 +6,7 @@ import SpheresPage from './pages/SpheresPage';
 import SettingsPage from './pages/SettingsPage';
 import DayPage from './pages/DayPage';
 import ReportsPage from './pages/ReportsPage';
+import ProgressPage from './pages/ProgressPage';
 import { ToastHost } from './components/Toast';
 import { ConfirmHost } from './components/Confirm';
 import SyncChoice from './components/SyncChoice';
@@ -22,6 +23,9 @@ const icons: Record<Route, JSX.Element> = {
   reports: (
     <svg viewBox="0 0 24 24" aria-hidden><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 8.5h2" /></svg>
   ),
+  progress: (
+    <svg viewBox="0 0 24 24" aria-hidden><path d="M4 19h16" /><path d="M5 15l4-4 3 3 6-7" /><path d="M15 7h3v3" /></svg>
+  ),
   spheres: (
     <svg viewBox="0 0 24 24" aria-hidden><path d="M5 19V13M10 19V7M15 19v-9M20 19V4" /></svg>
   ),
@@ -30,7 +34,7 @@ const icons: Record<Route, JSX.Element> = {
   ),
 };
 
-const NAV: [Route, string][] = [['week', 'Неделя'], ['day', 'День'], ['reports', 'Отчёты'], ['spheres', 'Сферы'], ['settings', 'Настройки']];
+const NAV: [Route, string][] = [['week', 'Неделя'], ['day', 'День'], ['reports', 'Отчёты'], ['progress', 'Прогресс'], ['spheres', 'Сферы'], ['settings', 'Настройки']];
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -85,6 +89,7 @@ export default function App() {
         {route === 'week' && <WeekPage />}
         {route === 'day' && <DayPage />}
         {route === 'reports' && <ReportsPage />}
+        {route === 'progress' && <ProgressPage />}
         {route === 'spheres' && <SpheresPage />}
         {route === 'settings' && <SettingsPage />}
       </main>
