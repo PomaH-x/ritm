@@ -80,7 +80,7 @@ export const BUILTIN_SECTIONS: SectionDef[] = [
     ],
   },
   {
-    key: 'hygiene', title: 'Гигиена', emoji: '🪥', color: '#2DD4BF', kind: 'generic',
+    key: 'hygiene', title: 'Гигиена', emoji: '🚿', color: '#2DD4BF', kind: 'generic',
     fields: [
       c('teethAm', 'Зубы утром'), c('teethPm', 'Зубы вечером'), c('floss', 'Нить и ополаскиватель'),
       c('wash', 'Умывание пенкой'), c('garnier', 'Garnier 3-в-1', '2–3 раза в неделю'),
