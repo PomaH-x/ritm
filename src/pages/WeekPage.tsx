@@ -4,9 +4,10 @@ import SlotSheet from '../components/SlotSheet';
 import EventEditor, { type Draft } from '../components/EventEditor';
 import NormsPanel from '../components/NormsPanel';
 import { toast } from '../components/Toast';
-import { ask } from '../components/Confirm';
+import { choose } from '../components/Confirm';
+import RecurringModal from '../components/RecurringModal';
 import SyncButton from '../components/SyncButton';
-import { applyTemplate, copyWeek, createEvent, deleteEvent, saveWeekAsTemplate, updateEvent } from '../db';
+import { createEvent, createSeries, db, deleteEvent, endSeriesFrom, makeRecurring, materialize, updateEvent, type Repeat } from '../db';
 import { useEventsBetween, useMedia, useNow, useProgram, useSectionLogs, useSectionsConfig, useSettings, useSpheres } from '../lib/hooks';
 import { sportDayStatus } from '../lib/sport';
 import type { Slot } from '../lib/recommend';
@@ -78,7 +79,6 @@ export default function WeekPage() {
     if (old) undoable('Перенесено', () => updateEvent(id, { date: old.date, startMin: old.startMin, endMin: old.endMin }));
   };
 
-  const toggleDone = (e: CalEvent) => updateEvent(e.id, { status: e.status === 'done' ? 'planned' : 'done' });
 
   const newEventDraft = (): Draft => {
     const date = days.includes(now.date) ? now.date : days[narrow ? dayIdx : 0];
@@ -87,27 +87,67 @@ export default function WeekPage() {
     return { sphereId: null, title: '', date, startMin: start, endMin: start + 60, status: 'planned', notes: '' };
   };
 
+  const sameRepeat = (a: Repeat | null | undefined, b: Repeat | null | undefined) =>
+    (!a && !b) || (!!a && !!b && a.interval === b.interval && a.until === b.until && [...a.weekdays].sort().join() === [...b.weekdays].sort().join());
+
+  const openEvent = async (e: CalEvent) => {
+    const s = e.seriesId ? await db.series.get(e.seriesId) : undefined;
+    setDraft({ ...e, repeat: s && !s.deleted ? { interval: s.interval, weekdays: s.weekdays, until: s.until } : null });
+  };
+
   const saveDraft = async (d: Draft) => {
-    const { id, ...rest } = d;
-    if (id) await updateEvent(id, rest);
-    else await createEvent(rest);
+    const { id, repeat, ...rest } = d;
+    const fields = { sphereId: rest.sphereId, title: rest.title, date: rest.date, startMin: rest.startMin, endMin: rest.endMin, notes: rest.notes };
+    if (!id) {
+      if (repeat) await createSeries(fields, repeat); else await createEvent({ ...fields, status: 'planned' });
+      setDraft(null);
+      return;
+    }
+    const ev = await db.events.get(id);
+    if (!ev) { setDraft(null); return; }
+    if (!ev.seriesId) {
+      if (repeat) { await deleteEvent(id); await createSeries(fields, repeat); }
+      else await updateEvent(id, fields);
+      setDraft(null);
+      return;
+    }
+    // Повторение серии: спрашиваем, менять ли только его или и следующие
+    const s = await db.series.get(ev.seriesId);
+    const oldRepeat = s && !s.deleted ? { interval: s.interval, weekdays: s.weekdays, until: s.until } : null;
+    const repeatChanged = !sameRepeat(repeat, oldRepeat);
+    const changed = repeatChanged || ['sphereId', 'title', 'date', 'startMin', 'endMin', 'notes'].some((k) => (fields as Record<string, unknown>)[k] !== (ev as unknown as Record<string, unknown>)[k]);
+    if (!changed) { setDraft(null); return; }
+    const scope = repeatChanged
+      ? await choose('Изменить повторение', 'Новые правила повтора применятся к этому событию и всем следующим. Прошедшие останутся как были.', [{ key: 'following', label: 'Это и следующие' }])
+      : await choose('Изменить повторяющееся событие', 'Изменить только это событие или это и все следующие?', [{ key: 'one', label: 'Только это' }, { key: 'following', label: 'Это и следующие' }]);
+    if (!scope) return;
+    if (scope === 'one') await updateEvent(id, fields);
+    else {
+      await endSeriesFrom(ev.seriesId, ev.date);
+      if (repeat) await createSeries(fields, repeat);
+      else await createEvent({ ...fields, status: 'planned' });
+    }
     setDraft(null);
   };
 
-  const runMenu = async (action: 'template' | 'copy' | 'saveTemplate') => {
-    setMenu(false);
-    if (action === 'template') {
-      const n = await applyTemplate(weekStart);
-      toast(n ? `Добавлено занятий из шаблона: ${n}` : 'Все занятия из шаблона уже стоят');
-    } else if (action === 'copy') {
-      if (events.length && !(await ask('На этой неделе уже есть события. Добавить к ним копию прошлой недели?', 'Добавить копию'))) return;
-      const n = await copyWeek(addDays(weekStart, -7), weekStart);
-      toast(n ? `Скопировано событий: ${n}` : 'Прошлая неделя пустая');
-    } else {
-      const n = await saveWeekAsTemplate(weekStart);
-      toast(`Шаблон обновлён: ${n} занятий`);
+  const removeDraft = async (d: Draft) => {
+    const id = d.id!;
+    const ev = await db.events.get(id);
+    if (ev?.seriesId) {
+      const scope = await choose('Удалить повторяющееся событие', 'Удалить только это событие или это и все следующие? Прошедшие останутся в истории.',
+        [{ key: 'one', label: 'Только это' }, { key: 'following', label: 'Это и все следующие' }]);
+      if (!scope) return;
+      setDraft(null);
+      if (scope === 'following') { await endSeriesFrom(ev.seriesId, ev.date); toast('Повторы удалены с этой даты'); return; }
     }
+    await deleteEvent(id);
+    setDraft(null);
+    undoable(`Удалено: ${d.title}`, () => updateEvent(id, { deleted: 0 }));
   };
+
+  const [recurring, setRecurring] = useState(false);
+
+  useEffect(() => { void materialize(days[0], days[6]); }, [days]);
 
   return (
     <div className="week">
@@ -128,9 +168,7 @@ export default function WeekPage() {
             <button type="button" className="icon-btn" aria-label="Действия с неделей" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>⋯</button>
             {menu && (
               <div className="menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => runMenu('template')}>Заполнить рабочими занятиями из шаблона</button>
-                <button type="button" role="menuitem" onClick={() => runMenu('copy')}>Скопировать всё с прошлой недели</button>
-                <button type="button" role="menuitem" onClick={() => runMenu('saveTemplate')}>Сделать работу этой недели шаблоном</button>
+                <button type="button" role="menuitem" onClick={() => { setMenu(false); setRecurring(true); }}>Сделать события этой недели повторяющимися…</button>
               </div>
             )}
           </div>
@@ -154,8 +192,7 @@ export default function WeekPage() {
 
         {events.length === 0 && (
           <div className="empty-week">
-            <p>Неделя пока пустая. Выдели свободное время в сетке — подскажу, чем заняться.</p>
-            <button type="button" className="btn ghost small" onClick={() => runMenu('template')}>Поставить рабочие занятия</button>
+            <p>Неделя пока пустая. Выдели свободное время в сетке — подскажу, чем заняться. Чтобы занятие появлялось каждую неделю, включи у него «Повторять».</p>
           </div>
         )}
 
@@ -167,9 +204,8 @@ export default function WeekPage() {
           now={now}
           highlight={slot}
           onSelectSlot={setSlot}
-          onOpenEvent={(e) => setDraft({ ...e })}
+          onOpenEvent={openEvent}
           onChangeEvent={change}
-          onToggleDone={toggleDone}
         />
       </div>
 
@@ -199,20 +235,23 @@ export default function WeekPage() {
           spheres={spheres}
           onClose={() => setDraft(null)}
           onSave={saveDraft}
-          onDelete={draft.id ? async () => {
-            const id = draft.id!;
-            await deleteEvent(id);
-            setDraft(null);
-            undoable(`Удалено: ${draft.title}`, () => updateEvent(id, { deleted: 0 }));
-          } : undefined}
+          onDelete={draft.id ? () => removeDraft(draft) : undefined}
           onDuplicate={draft.id ? async () => {
-            const { id: _id, ...rest } = draft;
-            void _id;
-            await createEvent({ ...rest, date: addDays(draft.date, 1), status: 'planned' });
+            await createEvent({ sphereId: draft.sphereId, title: draft.title, date: addDays(draft.date, 1), startMin: draft.startMin, endMin: draft.endMin, notes: draft.notes, status: 'planned' });
             setDraft(null);
             toast('Копия добавлена на следующий день');
           } : undefined}
         />
+      )}
+
+      {recurring && (
+        <RecurringModal events={events} spheres={spheres} weekLabel={fmtWeekRange(weekStart)}
+          onClose={() => setRecurring(false)}
+          onConfirm={async (list) => {
+            await makeRecurring(list);
+            setRecurring(false);
+            toast(`Повторяются каждую неделю: ${list.length}`);
+          }} />
       )}
     </div>
   );

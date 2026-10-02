@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ensureSeed } from './db';
+import { db, ensureSeed, materializeAll } from './db';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useRoute, useSettings, type Route } from './lib/hooks';
 import WeekPage from './pages/WeekPage';
 import SpheresPage from './pages/SpheresPage';
@@ -8,7 +9,7 @@ import DayPage from './pages/DayPage';
 import ReportsPage from './pages/ReportsPage';
 import ProgressPage from './pages/ProgressPage';
 import { ToastHost } from './components/Toast';
-import { ConfirmHost } from './components/Confirm';
+import { ChoiceHost, ConfirmHost } from './components/Confirm';
 import SyncChoice from './components/SyncChoice';
 import { startAutoSync } from './sync/engine';
 import { preloadGoogle } from './sync/google';
@@ -45,6 +46,10 @@ export default function App() {
   useEffect(() => {
     ensureSeed().then(() => { setReady(true); startAutoSync(); preloadGoogle(); }).catch((e) => setError(String(e?.message ?? e)));
   }, []);
+
+  // Серии могли прийти с другого устройства или измениться — дорисовываем повторения
+  const seriesStamp = useLiveQuery(async () => (await db.series.toArray()).reduce((m, s) => Math.max(m, s.updatedAt), 0), []);
+  useEffect(() => { if (ready) void materializeAll(); }, [ready, seriesStamp]);
 
   useEffect(() => {
     const el = document.documentElement;
@@ -95,6 +100,7 @@ export default function App() {
       </main>
       <ToastHost />
       <ConfirmHost />
+      <ChoiceHost />
       <SyncChoice />
     </div>
   );

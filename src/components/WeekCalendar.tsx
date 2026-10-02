@@ -14,7 +14,6 @@ interface Props {
   onSelectSlot: (s: Slot) => void;
   onOpenEvent: (e: CalEvent) => void;
   onChangeEvent: (id: string, patch: Partial<CalEvent>) => void;
-  onToggleDone: (e: CalEvent) => void;
 }
 
 type Preview =
@@ -298,7 +297,7 @@ export default function WeekCalendar(p: Props) {
                       role="button"
                       aria-label={`${ev.title}, ${fmtTime(ev.startMin)}–${fmtTime(ev.endMin)}`}
                       onKeyDown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); p.onOpenEvent(eventsById.get(ev.id)!); } }}
-                      className={`ev ev-${ev.status}${dragging ? ' is-dragged' : ''}${h < 30 ? ' is-short' : ''}`}
+                      className={`ev${ev.status === 'skipped' ? ' ev-skipped' : ''}${dragging ? ' is-dragged' : ''}${h < 30 ? ' is-short' : ''}`}
                       style={{
                         ['--c' as string]: s?.color ?? '#8792a2',
                         top,
@@ -316,17 +315,6 @@ export default function WeekCalendar(p: Props) {
                         )}
                         <div className="ev-title">{ev.title || s?.name || 'Без названия'}</div>
                       </div>
-                      {h >= 22 && (
-                        <button
-                          type="button"
-                          data-nodrag
-                          className="ev-check"
-                          aria-label={ev.status === 'done' ? 'Отметить как запланированное' : 'Отметить как сделанное'}
-                          onClick={() => p.onToggleDone(eventsById.get(ev.id)!)}
-                        >
-                          {ev.status === 'done' ? '✓' : ''}
-                        </button>
-                      )}
                       <div className="ev-resize" data-resize aria-hidden />
                     </div>
                   );

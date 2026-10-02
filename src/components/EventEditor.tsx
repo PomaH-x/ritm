@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import Modal from './Modal';
-import type { CalEvent, EventStatus, Sphere } from '../types';
-import { fmtDur, fmtTime, parseTime } from '../lib/time';
+import DayPicker from './DayPicker';
+import type { CalEvent, Sphere } from '../types';
+import type { Repeat } from '../db';
+import { fmtDur, fmtTime, parseTime, plural, WD_SHORT, weekday } from '../lib/time';
 
-export type Draft = Omit<CalEvent, 'id' | 'createdAt' | 'updatedAt' | 'deleted'> & { id?: string };
+export type Draft = Omit<CalEvent, 'id' | 'createdAt' | 'updatedAt' | 'deleted'> & { id?: string; repeat?: Repeat | null };
 
 interface Props {
   draft: Draft;
@@ -14,7 +16,15 @@ interface Props {
   onClose: () => void;
 }
 
-const STATUSES: [EventStatus, string][] = [['planned', 'В плане'], ['done', 'Сделано'], ['skipped', 'Пропущено']];
+const WD_ACC = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
+
+export function repeatSummary(r: Repeat): string {
+  const days = [...r.weekdays].sort();
+  const when = days.length === 1 ? WD_ACC[days[0] - 1] : `по ${days.map((d) => WD_SHORT[d - 1]).join(', ')}`;
+  const every = r.interval === 1 ? '' : `каждые ${r.interval} ${plural(r.interval, 'неделю', 'недели', 'недель')} `;
+  const until = r.until ? ` до ${r.until.split('-').reverse().join('.')}` : '';
+  return `Повторять ${every}${when}${until}`;
+}
 
 export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplicate, onClose }: Props) {
   const [d, setD] = useState<Draft>(draft);
@@ -24,15 +34,18 @@ export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplic
   const sMin = parseTime(start);
   const eMin = parseTime(end);
   const error = sMin == null || eMin == null ? 'Укажи время начала и конца' : eMin <= sMin ? 'Конец должен быть позже начала' : '';
+  const r = d.repeat;
+  const setR = (patch: Partial<Repeat>) => setD({ ...d, repeat: { ...(r ?? { interval: 1, weekdays: [weekday(d.date)], until: null }), ...patch } });
 
   const save = () => {
     if (error || sMin == null || eMin == null) return;
-    onSave({ ...d, title: d.title.trim() || sphere?.name || 'Без названия', startMin: sMin, endMin: eMin });
+    const repeat = r && r.weekdays.length ? r : r ? { ...r, weekdays: [weekday(d.date)] } : null;
+    onSave({ ...d, repeat, title: d.title.trim() || sphere?.name || 'Без названия', startMin: sMin, endMin: eMin });
   };
 
   return (
     <Modal
-      title={draft.id ? 'Событие' : 'Новое событие'}
+      title={draft.id ? (draft.seriesId ? 'Повторяющееся событие' : 'Событие') : 'Новое событие'}
       onClose={onClose}
       footer={
         <>
@@ -86,19 +99,32 @@ export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplic
           </label>
         </div>
         <p className={'hint' + (error ? ' is-error' : '')}>
-          {error || `Длительность ${fmtDur((eMin ?? 0) - (sMin ?? 0))}. Время до 04:00 относится к этому же дню.`}
+          {error || `Длительность ${fmtDur((eMin ?? 0) - (sMin ?? 0))}. Когда время пройдёт, событие считается сделанным; не сделал — удали его.`}
         </p>
 
         <div className="field">
-          <span>Статус</span>
-          <div className="seg" role="radiogroup">
-            {STATUSES.map(([v, label]) => (
-              <button key={v} type="button" role="radio" aria-checked={d.status === v}
-                className={d.status === v ? 'is-on' : ''} onClick={() => setD({ ...d, status: v })}>
-                {label}
-              </button>
-            ))}
+          <span>Повторять</span>
+          <div className="seg">
+            <button type="button" className={!r ? 'is-on' : ''} onClick={() => setD({ ...d, repeat: null })}>Не повторять</button>
+            <button type="button" className={r ? 'is-on' : ''} onClick={() => setR({})}>Повторять</button>
           </div>
+          {r && (
+            <div className="repeat">
+              <div className="inline">
+                <span>Каждую</span>
+                <input type="number" min={1} max={12} value={r.interval} aria-label="Интервал в неделях" className="repeat-n"
+                  onChange={(e) => setR({ interval: Math.min(12, Math.max(1, Number(e.target.value) || 1)) })} />
+                <span>{plural(r.interval, 'неделю', 'недели', 'недель')}</span>
+              </div>
+              <DayPicker label="Дни повтора" value={r.weekdays} onChange={(v) => setR({ weekdays: v })} />
+              <div className="inline">
+                <label className="toggle"><input type="radio" name="until" checked={!r.until} onChange={() => setR({ until: null })} /> Всегда</label>
+                <label className="toggle"><input type="radio" name="until" checked={!!r.until} onChange={() => setR({ until: r.until ?? `${Number(d.date.slice(0, 4)) + 1}-01-01` })} /> До</label>
+                {r.until && <input type="date" value={r.until} style={{ width: 'auto' }} onChange={(e) => e.target.value && setR({ until: e.target.value })} />}
+              </div>
+              <p className="hint repeat-sum">{repeatSummary(r.weekdays.length ? r : { ...r, weekdays: [weekday(d.date)] })}</p>
+            </div>
+          )}
         </div>
 
         <label className="field">

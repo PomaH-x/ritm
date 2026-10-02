@@ -3,8 +3,9 @@ import { db } from '../db';
 import { dayData, loadBundle, type Bundle } from './report';
 import { sportDayStatus, targetFor, setsOf } from './sport';
 import { dur } from './stats';
-import { addDays, logicalNow, parseISODate, weekday, weekStartOf, toISODate } from './time';
+import { addDays, isDone, logicalNow, parseISODate, weekday, weekStartOf, toISODate } from './time';
 import type { Exercise } from '../types';
+import { topErrors, trialsIn } from './ege';
 
 export type Period = '7' | '30' | 'all';
 
@@ -81,9 +82,9 @@ function sphereDay(c: Ctx, sphereId: string, kind: 'minutes' | 'count', date: st
   const dd = c.data.get(date);
   if (kind === 'minutes') {
     if (linked && linked !== 'sport') return num(dd?.eff[linked]?.minutes) ?? 0;
-    return c.b.events.filter((e) => e.date === date && e.sphereId === sphereId && e.status === 'done').reduce((a, e) => a + dur(e), 0);
+    return c.b.events.filter((e) => e.date === date && e.sphereId === sphereId && isDone(e)).reduce((a, e) => a + dur(e), 0);
   }
-  const cal = c.b.events.some((e) => e.date === date && e.sphereId === sphereId && e.status === 'done');
+  const cal = c.b.events.some((e) => e.date === date && e.sphereId === sphereId && isDone(e));
   const log = linked === 'sport' ? c.b.logs.find((l) => l.date === date && l.section === 'sport') : undefined;
   const trained = log ? sportDayStatus(log, c.b.program, weekday(date)).trained : false;
   return cal || trained ? 1 : 0;
@@ -189,3 +190,24 @@ export function moneyChart(c: Ctx) {
 }
 
 export const todayISO = () => toISODate(new Date());
+
+// ---------- Пробные варианты ЕГЭ ----------
+
+export function trialsChart(c: Ctx) {
+  const list = trialsIn(c.b.logs, c.days[0], c.today);
+  const scores = list.map((t) => t.score);
+  const last5 = scores.slice(-5);
+  return {
+    count: list.length,
+    last: scores.length ? scores[scores.length - 1] : null,
+    avg5: last5.length ? Math.round(last5.reduce((a, b) => a + b, 0) / last5.length) : null,
+    best: scores.length ? Math.max(...scores) : null,
+    errors: topErrors(list, 5),
+    chart: {
+      labels: list.map((t) => dm(t.date)),
+      tips: list.map((t) => `${dm(t.date)}${t.errors.length ? ` · ошибки: ${t.errors.join(', ')}` : ''}`),
+      series: [{ name: 'Тестовый балл', color: '#EC6FCF', values: scores }],
+      refs: [{ value: 90, label: 'цель 90' }],
+    } as ChartData,
+  };
+}

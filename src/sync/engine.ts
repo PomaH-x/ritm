@@ -7,8 +7,9 @@
 import Dexie from 'dexie';
 import { useSyncExternalStore } from 'react';
 import { db, exportAll, importAll, type Backup } from '../db';
-import { AuthError, download, findFile, upload } from './drive';
-import { clientId, forgetToken, requestToken, validToken } from './google';
+import { AuthError, download, findFile, upload, uploadBackup } from './drive';
+import { canWriteFiles, clientId, forgetToken, requestToken, validToken } from './google';
+import { toISODate } from '../lib/time';
 
 export type SyncState = 'off' | 'idle' | 'syncing' | 'auth' | 'error' | 'offline';
 export interface SyncStatus { state: SyncState; lastSync: number | null; message?: string; dirty: boolean; needChoice: boolean }
@@ -56,8 +57,9 @@ function isBackup(x: unknown): x is Backup {
 
 async function replaceLocal(remote: Backup) {
   ignoreUntil = Date.now() + 3000;
-  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks], async () => {
-    await Promise.all([db.spheres.clear(), db.events.clear(), db.kv.clear(), db.logs.clear(), db.tasks.clear()]);
+  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks, db.series], async () => {
+    await Promise.all([db.spheres.clear(), db.events.clear(), db.kv.clear(), db.logs.clear(), db.tasks.clear(), db.series.clear()]);
+    await db.series.bulkPut(remote.series ?? []);
     await db.spheres.bulkPut(remote.spheres ?? []);
     await db.events.bulkPut(remote.events ?? []);
     await db.kv.bulkPut(remote.kv ?? []);
@@ -78,11 +80,12 @@ function localAhead(local: Backup, remote: Backup | null): boolean {
   add('k', remote.kv, (r: { key: string }) => r.key);
   add('l', remote.logs, (r: { id: string }) => r.id);
   add('t', remote.tasks, (r: { id: string }) => r.id);
+  add('r', remote.series, (r: { id: string }) => r.id);
   const newer = (t: string, rows: { updatedAt: number }[] | undefined, key: (r: never) => string) =>
     (rows ?? []).some((r) => (idx.get(t + ':' + key(r as never)) ?? -1) < r.updatedAt);
   return newer('s', local.spheres, (r: { id: string }) => r.id) || newer('e', local.events, (r: { id: string }) => r.id)
     || newer('k', local.kv, (r: { key: string }) => r.key) || newer('l', local.logs, (r: { id: string }) => r.id)
-    || newer('t', local.tasks, (r: { id: string }) => r.id);
+    || newer('t', local.tasks, (r: { id: string }) => r.id) || newer('r', local.series, (r: { id: string }) => r.id);
 }
 
 async function run(interactive: boolean, mode?: Mode) {
@@ -136,6 +139,7 @@ async function run(interactive: boolean, mode?: Mode) {
   localStorage.removeItem(LS_DIRTY);
   const now = Date.now();
   localStorage.setItem(LS_LAST, String(now));
+  await weeklyBackup(token, false);
   set({
     state: 'idle', lastSync: now, dirty: false, needChoice: false,
     message: received === -1 ? 'Данные загружены с Диска' : received > 0 ? `Получено изменений: ${received}${sent ? ', отправлено' : ''}` : sent ? 'Изменения отправлены' : 'Всё совпадает',
@@ -176,4 +180,34 @@ export function startAutoSync() {
   document.addEventListener('visibilitychange', tick);
   window.addEventListener('online', tick);
   window.addEventListener('offline', () => set({ state: 'offline' }));
+}
+
+// ---------- Еженедельная резервная копия ----------
+
+export interface BackupInfo { at: number; name: string }
+
+export async function lastBackup(): Promise<BackupInfo | null> {
+  return ((await db.kv.get('backupLast'))?.value as BackupInfo | undefined) ?? null;
+}
+
+/** Раз в неделю (или по кнопке) — полная копия в видимую папку на Диске. Ошибка копии не ломает синхронизацию. */
+async function weeklyBackup(token: string, force: boolean) {
+  if (!canWriteFiles()) return;
+  const last = await lastBackup();
+  if (!force && last && Date.now() - last.at < 7 * 86400000) return;
+  const name = `ritm-backup-${toISODate(new Date())}.json`;
+  try {
+    await uploadBackup(token, name, await exportAll());
+    ignoreUntil = Date.now() + 1500;
+    await db.kv.put({ key: 'backupLast', value: { at: Date.now(), name }, updatedAt: Date.now() });
+  } catch (e) {
+    if (force) throw e;
+  }
+}
+
+export async function backupNow(): Promise<void> {
+  let token = validToken();
+  if (!token || !canWriteFiles()) token = await requestToken();
+  if (!canWriteFiles()) throw new Error('Google не дал разрешение на создание файлов на Диске');
+  await weeklyBackup(token, true);
 }

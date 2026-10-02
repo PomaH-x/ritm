@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import Chart from '../components/Chart';
-import { exerciseChart, exerciseList, loadCtx, moneyChart, normCharts, sleepCharts, type Period } from '../lib/progress';
+import { exerciseChart, exerciseList, loadCtx, moneyChart, normCharts, sleepCharts, trialsChart, type Period } from '../lib/progress';
 import { fmtTime } from '../lib/time';
 
 const ru = (v: number, d = 1) => String(Math.round(v * 10 ** d) / 10 ** d).replace('.', ',');
@@ -19,6 +19,7 @@ export default function ProgressPage() {
   const sleep = ctx ? sleepCharts(ctx) : null;
   const norms = ctx ? normCharts(ctx) : [];
   const moneyD = ctx ? moneyChart(ctx) : null;
+  const trials = ctx ? trialsChart(ctx) : null;
 
   return (
     <div className="page progress">
@@ -58,6 +59,19 @@ export default function ProgressPage() {
                 <Chart data={nm.chart} type="bar" format={(v) => `${ru(v)} ${nm.unit}`} height={150} />
               </div>
             ))}
+          </section>
+
+          <section className="pg-card">
+            <h2>ЕГЭ: пробные варианты</h2>
+            {trials!.count ? (
+              <>
+                <p className="pg-stats">
+                  Последний <b>{trials!.last}</b>, средний за последние 5 — <b>{trials!.avg5}</b>, лучший {trials!.best}. Вариантов: {trials!.count}.
+                </p>
+                <Chart data={trials!.chart} type="line" fromZero={false} format={(v) => String(Math.round(v))} />
+                {trials!.errors && <p className="hint">Чаще всего ошибки в заданиях: {trials!.errors}</p>}
+              </>
+            ) : <p className="pg-stats">За этот период пробных вариантов нет. Добавляй их на странице «День» в карточке ЕГЭ.</p>}
           </section>
 
           <section className="pg-card">

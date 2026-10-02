@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { disconnect, sync, useSyncStatus } from '../sync/engine';
+import { backupNow, disconnect, lastBackup, sync, useSyncStatus } from '../sync/engine';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { clientId, clientIdFromConfig, setClientId } from '../sync/google';
 import { exportAll, importAll, type Backup } from '../db';
 import { toast } from './Toast';
@@ -9,6 +10,8 @@ export default function SyncSettings() {
   const [id, setId] = useState(clientId());
   const [saved, setSaved] = useState(!!clientId());
   const fromConfig = clientIdFromConfig();
+  const backup = useLiveQuery(() => lastBackup(), []);
+  const [busyB, setBusyB] = useState(false);
 
   return (
     <section className="card">
@@ -44,6 +47,20 @@ export default function SyncSettings() {
             {s.state !== 'off' && <button type="button" className="btn ghost" onClick={() => { disconnect(); toast('Синхронизация на этом устройстве отключена'); }}>Отключить на этом устройстве</button>}
           </div>
         </>
+      )}
+      {saved && s.state !== 'off' && (
+        <div className="field">
+          <span>Резервная копия на Google Диске — раз в неделю, в папку «Ритм — резервные копии» (хранятся последние 8)</span>
+          <div className="inline">
+            <span className="sync-line">{backup ? `Последняя: ${new Date(backup.at).toLocaleDateString('ru-RU')}` : 'Ещё не делалась'}</span>
+            <button type="button" className="btn ghost small" disabled={busyB} onClick={async () => {
+              setBusyB(true);
+              try { await backupNow(); toast('Копия сохранена на Диске'); }
+              catch (e) { toast('Не получилось: ' + (e instanceof Error ? e.message : String(e))); }
+              finally { setBusyB(false); }
+            }}>{busyB ? 'Сохраняю…' : 'Сделать копию сейчас'}</button>
+          </div>
+        </div>
       )}
       <Transfer />
     </section>

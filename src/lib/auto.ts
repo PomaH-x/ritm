@@ -1,5 +1,6 @@
 import type { CalEvent, FieldDef, SectionDef, Sphere } from '../types';
 import { dur } from './stats';
+import { isDone } from './time';
 
 const toMin = (s: unknown): number | null => {
   if (typeof s !== 'string') return null;
@@ -22,23 +23,26 @@ export function sleepHours(bed: unknown, wake: unknown): number | null {
 export interface AutoCtx {
   dayEvents: CalEvent[];
   spheres: Sphere[];
+  /** Сколько пробных вариантов ЕГЭ записано за день */
+  trialsCount?: number;
 }
 
 /** Значение, которое подставляется, пока поле не заполнено вручную */
 export function autoValue(f: FieldDef, sec: SectionDef, values: Record<string, unknown>, ctx: AutoCtx): number | null {
   if (!f.auto) return null;
   if (f.auto === 'sleepHours') return sleepHours(values.bed, values.wake);
+  if (f.auto === 'trialsCount') return ctx.trialsCount ? ctx.trialsCount : null;
   if (f.auto === 'sphereMinutes') {
     if (!sec.linkSphereId) return null;
     const m = ctx.dayEvents
-      .filter((e) => e.sphereId === sec.linkSphereId && e.status === 'done')
+      .filter((e) => e.sphereId === sec.linkSphereId && isDone(e))
       .reduce((a, e) => a + dur(e), 0);
     return m > 0 ? m : null;
   }
   if (f.auto === 'groupHours') {
     const ids = new Set(ctx.spheres.filter((s) => s.group === sec.linkGroup).map((s) => s.id));
     const m = ctx.dayEvents
-      .filter((e) => e.sphereId && ids.has(e.sphereId) && e.status !== 'skipped')
+      .filter((e) => e.sphereId && ids.has(e.sphereId) && isDone(e))
       .reduce((a, e) => a + dur(e), 0);
     return m > 0 ? Math.round((m / 60) * 4) / 4 : null;
   }
@@ -47,7 +51,8 @@ export function autoValue(f: FieldDef, sec: SectionDef, values: Record<string, u
 
 export function autoLabel(f: FieldDef): string {
   if (f.auto === 'sleepHours') return 'посчитано по времени';
-  if (f.auto === 'sphereMinutes') return 'из расписания, отмечено «сделано»';
-  if (f.auto === 'groupHours') return 'из расписания';
+  if (f.auto === 'sphereMinutes') return 'из расписания (прошедшие события)';
+  if (f.auto === 'groupHours') return 'из расписания (прошедшие занятия)';
+  if (f.auto === 'trialsCount') return 'по записанным пробным вариантам';
   return '';
 }

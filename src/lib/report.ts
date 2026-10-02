@@ -9,8 +9,9 @@ import type { CalEvent, FieldDef, LogEntry, SectionDef, SectionsConfig, Settings
 import { EMPTY_CONFIG, resolveSections } from './sections';
 import { autoValue } from './auto';
 import { exerciseDone, fmtTarget, setsOf, sportDayStatus, targetFor } from './sport';
+import { topErrors, TRIALS, trialsIn, trialsOf } from './ege';
 import { dur, weekProgress } from './stats';
-import { addDays, fmtTime, fmtWeekRange, parseISODate, plural, WD_LONG, WD_SHORT, weekday, weekDays } from './time';
+import { addDays, fmtTime, fmtWeekRange, isPast, parseISODate, plural, WD_LONG, WD_SHORT, weekday, weekDays } from './time';
 
 export interface Bundle {
   logs: LogEntry[];
@@ -71,12 +72,12 @@ function outValue(f: FieldDef, v: unknown): unknown {
 }
 
 /** Действующие значения раздела за день: ввод пользователя или автоподсчёт */
-function effective(sec: SectionDef, log: LogEntry | undefined, dayEvents: CalEvent[], spheres: Sphere[]) {
+function effective(sec: SectionDef, log: LogEntry | undefined, dayEvents: CalEvent[], spheres: Sphere[], trialsCount = 0) {
   const values = log?.values ?? {};
   const out: Record<string, unknown> = {};
   let any = false;
   for (const f of sec.fields) {
-    const v = empty(values[f.key]) ? autoValue(f, sec, values, { dayEvents, spheres }) : values[f.key];
+    const v = empty(values[f.key]) ? autoValue(f, sec, values, { dayEvents, spheres, trialsCount }) : values[f.key];
     if (!empty(v)) { out[f.key] = v; any = true; }
   }
   // Неотмеченная галочка в заполненном разделе = «нет»
@@ -179,7 +180,7 @@ export function dayData(b: Bundle, date: string): DayData {
       if (log) { sport = sportDayStatus(log, b.program, wd); filled.push(sec.title); } else unfilled.push(sec.title);
       continue;
     }
-    const { values, any } = effective(sec, logs.get(sec.key), dayEvents, b.spheres);
+    const { values, any } = effective(sec, logs.get(sec.key), dayEvents, b.spheres, trialsOf(logs.get(TRIALS)).length);
     if (any) { eff[sec.key] = values; filled.push(sec.title); } else unfilled.push(sec.title);
   }
   return { eff, sport, filled, unfilled, flags: dayFlags(date, eff, sport, planned) };
@@ -199,7 +200,7 @@ export function dayReport(b: Bundle, date: string): Obj {
   const dayEvents = b.events.filter((e) => e.date === date && e.status !== 'skipped').sort((a, z) => a.startMin - z.startMin);
   const workMin = sum(dayEvents.filter((e) => byId.get(e.sphereId ?? '')?.group === 'Работа').map(dur));
   const other = dayEvents.filter((e) => byId.get(e.sphereId ?? '')?.group !== 'Работа').map((e) =>
-    `${fmtTime(e.startMin)}–${fmtTime(e.endMin)} ${byId.get(e.sphereId ?? '')?.name ?? 'без сферы'}: ${e.title} (${e.status === 'done' ? 'сделано' : 'не отмечено'})`);
+    `${fmtTime(e.startMin)}–${fmtTime(e.endMin)} ${byId.get(e.sphereId ?? '')?.name ?? 'без сферы'}: ${e.title} (${isPast(e) ? 'было' : 'запланировано'})`);
 
   const out: Obj = {
     'тип': 'отчёт за день',
@@ -271,7 +272,7 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
     norms[s.name] = {
       'цель': isMin ? `${hrs(s.normTarget)} ч` : times(s.normTarget),
       'сделано': isMin ? `${hrs(done)} ч` : times(done),
-      ...(p.planned > 0 ? { 'стоит в расписании, не отмечено': isMin ? `${hrs(p.planned)} ч` : times(p.planned) } : {}),
+      ...(p.planned > 0 ? { 'ещё запланировано': isMin ? `${hrs(p.planned)} ч` : times(p.planned) } : {}),
       'выполнение': `${pct}%`,
     };
     if (done >= s.normTarget) good.push(`Норма «${s.name}» выполнена (${pct}%)`);
@@ -329,7 +330,16 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
   const workH = nums('work', 'hours');
   const breaksMarked = E('work').filter((v) => !empty(v.breaks)).length;
   const work: Obj = { 'часов': r1(sum(workH)), 'перерывы с движением': breaksMarked ? `${count('work', 'breaks', true)} из ${breaksMarked} отмеченных дней` : 'не отмечались' };
-  const ege: Obj = { 'минут': sum(nums('ege', 'minutes')), 'вариантов решено': sum(nums('ege', 'variants')), 'первая часть, дней': count('ege', 'part1', true) };
+  const weekTrials = trialsIn(b.logs, weekStart, addDays(weekStart, 6));
+  const monthTrials = trialsIn(b.logs, addDays(weekStart, -21), addDays(weekStart, 6));
+  const ege: Obj = {
+    'минут': sum(nums('ege', 'minutes')), 'вариантов решено': sum(nums('ege', 'variants')), 'первая часть, дней': count('ege', 'part1', true),
+    'пробные варианты, баллы': weekTrials.length ? weekTrials.map((t) => t.score).join(', ') : 'не было',
+    ...(monthTrials.length ? {
+      'средний балл за 4 недели': Math.round(sum(monthTrials.map((t) => t.score)) / monthTrials.length),
+      'ошибки чаще всего (задание и сколько раз)': topErrors(monthTrials) || 'нет',
+    } : {}),
+  };
   const tactics = nums('chess', 'tactics');
   const chess: Obj = {
     'минут': sum(nums('chess', 'minutes')), 'тактика, мин': sum(tactics), 'дней с тактикой от 15 мин': tactics.filter((t) => t >= 15).length,

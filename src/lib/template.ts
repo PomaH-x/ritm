@@ -9,6 +9,7 @@ import { exerciseDone, fmtTarget, setsOf, targetFor } from './sport';
 import { dur } from './stats';
 import { addDays, fmtDayLong, fmtTime, fmtWeekRange, parseISODate, WD_LONG, weekday, weekStartOf } from './time';
 import { PLAN_CONTEXT } from '../coach/plan';
+import { TRIALS, trialsOf, trialText } from './ege';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -121,6 +122,10 @@ export function dayTemplate(b: Bundle, date: string): string {
     }
     const v = d.eff[sec.key];
     if (v) L.push(sectionLine(sec, v));
+    if (sec.key === 'ege') {
+      const tr = trialsOf(b.logs.find((l) => l.date === date && l.section === TRIALS));
+      if (tr.length) L.push(`  Пробные варианты: ${tr.map(trialText).join('; ')}`);
+    }
   }
   if (d.unfilled.length) L.push(`Не заполнено: ${d.unfilled.join(', ')}`);
 
@@ -171,7 +176,7 @@ export function weekTemplate(b: Bundle, weekStart: string, today: string): strin
     L.push('', '📈 НОРМЫ');
     for (const [name, x] of Object.entries(r['нормы'] as Obj)) {
       const n = x as Obj;
-      L.push(`${name}: ${dec(String(n['сделано']).replace(/ раза?$/, ''))} из ${dec(n['цель'])} (${n['выполнение']})${n['стоит в расписании, не отмечено'] ? `, ещё ${dec(n['стоит в расписании, не отмечено'])} стоит в расписании, но не отмечено` : ''}`);
+      L.push(`${name}: ${dec(String(n['сделано']).replace(/ раза?$/, ''))} из ${dec(n['цель'])} (${n['выполнение']})${n['ещё запланировано'] ? `, ещё ${dec(n['ещё запланировано'])} запланировано` : ''}`);
     }
   }
   const warn = r['отклонения от плана'] as string[];

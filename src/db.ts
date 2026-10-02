@@ -1,8 +1,8 @@
 import Dexie, { type Table } from 'dexie';
-import type { CalEvent, KV, LogEntry, SectionsConfig, Settings, Sphere, Task, TemplateItem, Workout } from './types';
+import type { CalEvent, KV, LogEntry, SectionsConfig, Series, Settings, Sphere, Task, TemplateItem, Workout } from './types';
 import { EMPTY_CONFIG } from './lib/sections';
 import { defaultProgram } from './lib/sport';
-import { logicalNow, weekDays, weekStartOf, weekday } from './lib/time';
+import { addDays, logicalNow, parseISODate, weekStartOf, weekday } from './lib/time';
 
 class RitmDB extends Dexie {
   spheres!: Table<Sphere, string>;
@@ -10,6 +10,7 @@ class RitmDB extends Dexie {
   kv!: Table<KV, string>;
   logs!: Table<LogEntry, string>;
   tasks!: Table<Task, string>;
+  series!: Table<Series, string>;
   constructor() {
     super('ritm');
     this.version(1).stores({
@@ -21,6 +22,7 @@ class RitmDB extends Dexie {
       logs: 'id, date, section, [section+date], updatedAt',
       tasks: 'id, done, updatedAt',
     });
+    this.version(3).stores({ series: 'id, updatedAt' });
   }
 }
 
@@ -57,61 +59,106 @@ export async function saveSettings(patch: Partial<Settings>) {
   await db.kv.put({ key: 'settings', value: { ...cur, ...patch }, updatedAt: Date.now() });
 }
 
-export async function getTemplate(): Promise<TemplateItem[]> {
-  const row = await db.kv.get('weekTemplate');
-  return (row?.value as TemplateItem[]) ?? [];
-}
+// ---------- Повторяющиеся события ----------
 
-export async function saveWeekAsTemplate(weekStart: string) {
-  const days = weekDays(weekStart);
-  const evs = (await db.events.where('date').between(days[0], days[6], true, true).toArray())
-    .filter((e) => !e.deleted);
-  // В шаблон попадает только работа и всё, что без нормы: регулярная «скелетная» часть недели
-  const spheres = new Map((await db.spheres.toArray()).map((s) => [s.id, s]));
-  const items: TemplateItem[] = evs
-    .filter((e) => {
-      const s = e.sphereId ? spheres.get(e.sphereId) : undefined;
-      return s ? s.group === 'Работа' : false;
-    })
-    .map((e) => ({ weekday: weekday(e.date), startMin: e.startMin, endMin: e.endMin, sphereId: e.sphereId, title: e.title }));
-  await db.kv.put({ key: 'weekTemplate', value: items, updatedAt: Date.now() });
-  return items.length;
-}
+const WEEK_MS = 7 * 86400000;
+const weeksBetween = (a: string, b: string) => Math.round((parseISODate(weekStartOf(b)).getTime() - parseISODate(weekStartOf(a)).getTime()) / WEEK_MS);
 
-export async function applyTemplate(weekStart: string): Promise<number> {
-  const items = await getTemplate();
-  const days = weekDays(weekStart);
-  const existing = (await db.events.where('date').between(days[0], days[6], true, true).toArray())
-    .filter((e) => !e.deleted);
-  const key = (d: string, s: number, t: string) => `${d}|${s}|${t}`;
-  const have = new Set(existing.map((e) => key(e.date, e.startMin, e.title)));
-  const now = Date.now();
-  const toAdd: CalEvent[] = [];
-  for (const it of items) {
-    const date = days[it.weekday - 1];
-    if (have.has(key(date, it.startMin, it.title))) continue; // не дублируем
-    toAdd.push({
-      id: uid(), createdAt: now, updatedAt: now, deleted: 0,
-      sphereId: it.sphereId, title: it.title, date,
-      startMin: it.startMin, endMin: it.endMin, status: 'planned', notes: '',
-    });
+/** Даты повторений серии в диапазоне */
+export function seriesDates(s: Series, from: string, to: string): string[] {
+  const out: string[] = [];
+  const start = from > s.startDate ? from : s.startDate;
+  const end = s.until && s.until < to ? s.until : to;
+  for (let d = start; d <= end; d = addDays(d, 1)) {
+    if (!s.weekdays.includes(weekday(d))) continue;
+    if (weeksBetween(s.startDate, d) % Math.max(1, s.interval) !== 0) continue;
+    out.push(d);
   }
-  await db.events.bulkAdd(toAdd);
-  return toAdd.length;
+  return out;
 }
 
-export async function copyWeek(fromStart: string, toStart: string): Promise<number> {
-  const from = weekDays(fromStart);
-  const to = weekDays(toStart);
-  const src = (await db.events.where('date').between(from[0], from[6], true, true).toArray())
-    .filter((e) => !e.deleted);
+export const instanceId = (seriesId: string, date: string) => `${seriesId}@${date}`;
+
+/**
+ * Создаём недостающие повторения в диапазоне. Id предсказуемый (серия@дата), поэтому
+ * на телефоне и компьютере это одна и та же запись, а время правки — время серии:
+ * удаление или перенос повторения всегда «новее» и побеждает при синхронизации.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+
+/** Вызовы идут по очереди, чтобы два одновременных запуска не создали одно и то же повторение */
+export function materialize(from: string, to: string): Promise<number> {
+  const run = queue.then(() => materializeNow(from, to));
+  queue = run.catch(() => 0);
+  return run;
+}
+
+async function materializeNow(from: string, to: string) {
+  const all = (await db.series.toArray()).filter((s) => !s.deleted);
+  const want: CalEvent[] = [];
+  for (const s of all) {
+    for (const d of seriesDates(s, from, to)) {
+      want.push({
+        id: instanceId(s.id, d), createdAt: s.updatedAt, updatedAt: s.updatedAt, deleted: 0,
+        sphereId: s.sphereId, title: s.title, date: d, startMin: s.startMin, endMin: s.endMin,
+        status: 'planned', notes: s.notes, seriesId: s.id,
+      });
+    }
+  }
+  if (!want.length) return 0;
+  const have = await db.events.bulkGet(want.map((e) => e.id));
+  const missing = want.filter((_, i) => !have[i]);
+  if (missing.length) {
+    try { await db.events.bulkAdd(missing); } catch { /* уже создано параллельно — не страшно */ }
+  }
+  return missing.length;
+}
+
+/** Повторения нужны от начала самой ранней серии до конца следующей недели */
+export async function materializeAll() {
+  const all = (await db.series.toArray()).filter((s) => !s.deleted);
+  if (!all.length) return;
+  const from = all.reduce((m, s) => (s.startDate < m ? s.startDate : m), all[0].startDate);
+  await materialize(from, addDays(weekStartOf(logicalNow().date), 13));
+}
+
+export type Repeat = { interval: number; weekdays: number[]; until: string | null };
+
+export async function createSeries(e: Pick<CalEvent, 'sphereId' | 'title' | 'date' | 'startMin' | 'endMin' | 'notes'>, r: Repeat) {
   const now = Date.now();
-  const copies: CalEvent[] = src.map((e) => ({
-    ...e, id: uid(), createdAt: now, updatedAt: now,
-    date: to[from.indexOf(e.date)], status: 'planned',
-  }));
-  await db.events.bulkAdd(copies);
-  return copies.length;
+  const s: Series = {
+    id: uid(), createdAt: now, updatedAt: now, deleted: 0,
+    sphereId: e.sphereId, title: e.title, startMin: e.startMin, endMin: e.endMin, notes: e.notes,
+    weekdays: r.weekdays.length ? r.weekdays : [weekday(e.date)], interval: Math.max(1, r.interval), startDate: e.date, until: r.until,
+  };
+  await db.series.add(s);
+  await materializeAll();
+  return s;
+}
+
+/** Остановить серию с даты: повторения с этой даты удаляются, прошлые остаются в истории */
+export async function endSeriesFrom(seriesId: string, date: string) {
+  const s = await db.series.get(seriesId);
+  if (!s) return;
+  const now = Date.now();
+  const prev = addDays(date, -1);
+  if (prev < s.startDate) await db.series.update(seriesId, { deleted: 1, updatedAt: now });
+  else await db.series.update(seriesId, { until: prev, updatedAt: now });
+  const later = (await db.events.where('date').aboveOrEqual(date).toArray()).filter((e) => e.seriesId === seriesId && !e.deleted);
+  await Promise.all(later.map((e) => db.events.update(e.id, { deleted: 1, updatedAt: now })));
+}
+
+/** Превратить обычные события в еженедельные серии (и убрать их ручные копии на будущих неделях) */
+export async function makeRecurring(events: CalEvent[]) {
+  const now = Date.now();
+  for (const e of events) {
+    await db.events.update(e.id, { deleted: 1, updatedAt: now });
+    const twins = (await db.events.where('date').above(e.date).toArray()).filter((x) =>
+      !x.deleted && !x.seriesId && x.title === e.title && x.startMin === e.startMin && x.endMin === e.endMin
+      && x.sphereId === e.sphereId && weekday(x.date) === weekday(e.date));
+    await Promise.all(twins.map((x) => db.events.update(x.id, { deleted: 1, updatedAt: now })));
+    await createSeries(e, { interval: 1, weekdays: [weekday(e.date)], until: null });
+  }
 }
 
 // ---------- События ----------
@@ -328,10 +375,14 @@ async function doSeed() {
   await db.transaction('rw', db.spheres, db.kv, async () => {
     await db.spheres.bulkAdd(spheres);
     await db.kv.put({ key: 'settings', value: DEFAULT_SETTINGS, updatedAt: now });
-    await db.kv.put({ key: 'weekTemplate', value: template, updatedAt: now });
     await db.kv.put({ key: 'seeded', value: true, updatedAt: now });
   });
-  await applyTemplate(weekStartOf(logicalNow().date));
+  // Рабочее расписание — еженедельными сериями с текущей недели
+  const ws = weekStartOf(logicalNow().date);
+  for (const t of template) {
+    await createSeries({ sphereId: t.sphereId, title: t.title, date: addDays(ws, t.weekday - 1), startMin: t.startMin, endMin: t.endMin, notes: '' },
+      { interval: 1, weekdays: [t.weekday], until: null });
+  }
 }
 
 // ---------- Резервная копия ----------
@@ -345,6 +396,7 @@ export interface Backup {
   kv: KV[];
   logs?: LogEntry[];
   tasks?: Task[];
+  series?: Series[];
 }
 
 export async function exportAll(): Promise<Backup> {
@@ -355,6 +407,7 @@ export async function exportAll(): Promise<Backup> {
     kv: await db.kv.toArray(),
     logs: await db.logs.toArray(),
     tasks: await db.tasks.toArray(),
+    series: await db.series.toArray(),
   };
 }
 
@@ -363,7 +416,7 @@ export async function importAll(data: Backup): Promise<{ added: number; updated:
   if (data?.app !== 'ritm') throw new Error('Это не резервная копия Ритма');
   let added = 0;
   let updated = 0;
-  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks], async () => {
+  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks, db.series], async () => {
     const merge = async <T extends { updatedAt: number }>(table: Table<T, string>, rows: T[], keyOf: (r: T) => string) => {
       for (const r of rows ?? []) {
         const cur = await table.get(keyOf(r));
@@ -376,6 +429,7 @@ export async function importAll(data: Backup): Promise<{ added: number; updated:
     await merge(db.kv, data.kv, (r) => r.key);
     await merge(db.logs, data.logs ?? [], (r) => r.id);
     await merge(db.tasks, data.tasks ?? [], (r) => r.id);
+    await merge(db.series, data.series ?? [], (r) => r.id);
   });
   return { added, updated };
 }

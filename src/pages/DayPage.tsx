@@ -8,6 +8,8 @@ import ProgramEditor, { HarderModal } from '../components/ProgramEditor';
 import { saveSectionsConfig } from '../db';
 import SyncButton from '../components/SyncButton';
 import SendToChat from '../components/SendToChat';
+import EgeTrials from '../components/EgeTrials';
+import { TRIALS, trialsOf } from '../lib/ege';
 import { useEventsBetween, useLogsOn, useNow, useProgram, useSectionLogs, useSectionsConfig, useSpheres } from '../lib/hooks';
 import { resolveSections } from '../lib/sections';
 import { addDays, fmtDayLong, weekday, weekStartOf } from '../lib/time';
@@ -30,7 +32,7 @@ export default function DayPage() {
   const [harder, setHarder] = useState<{ workoutId: string; ex: Exercise } | null>(null);
 
   const sections = useMemo(() => (cfg ? resolveSections(cfg) : []), [cfg]);
-  const ctx = { dayEvents, spheres };
+  const ctx = { dayEvents, spheres, trialsCount: trialsOf(logs?.get(TRIALS)).length };
 
   if (!cfg || !program || !logs || !yLogs) return <div className="page"><p className="muted">Загрузка…</p></div>;
 
@@ -79,6 +81,7 @@ export default function DayPage() {
             <SectionCard key={s.key} def={s} date={date} stored={logs.get(s.key)} yesterday={yLogs.get(s.key)}
               ctx={ctx} onEditFields={() => setEditFields(s.key)}>
               {s.kind === 'finance' && <FinanceSummary today={date} />}
+              {s.key === 'ege' && <EgeTrials date={date} />}
             </SectionCard>
           );
         })}

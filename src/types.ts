@@ -46,6 +46,21 @@ export interface CalEvent extends Base {
   endMin: number;
   status: EventStatus;
   notes: string;
+  /** Если событие — повторение серии */
+  seriesId?: string;
+}
+
+/** Повторяющееся событие: каждые interval недель по выбранным дням */
+export interface Series extends Base {
+  sphereId: string | null;
+  title: string;
+  startMin: number;
+  endMin: number;
+  weekdays: number[];
+  interval: number;
+  startDate: string;
+  until: string | null;
+  notes: string;
 }
 
 export interface Settings {
@@ -81,7 +96,7 @@ export interface KV {
 export type FieldType = 'number' | 'time' | 'bool' | 'check' | 'scale' | 'choice' | 'text' | 'note';
 
 /** Значение, которое можно посчитать само: из расписания или из других полей */
-export type AutoKind = 'sleepHours' | 'sphereMinutes' | 'groupHours';
+export type AutoKind = 'sleepHours' | 'sphereMinutes' | 'groupHours' | 'trialsCount';
 
 export interface FieldDef {
   key: string;

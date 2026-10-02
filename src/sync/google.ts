@@ -1,13 +1,16 @@
 /** Вход в Google: получаем короткоживущий токен доступа только к скрытой папке приложения на Диске */
 import { GOOGLE_CLIENT_ID } from '../config';
 
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const SCOPE_APPDATA = 'https://www.googleapis.com/auth/drive.appdata';
+/** Только файлы, созданные самим приложением, — для видимых резервных копий */
+const SCOPE_FILE = 'https://www.googleapis.com/auth/drive.file';
+const SCOPE = `${SCOPE_APPDATA} ${SCOPE_FILE}`;
 const LS_TOKEN = 'ritm:gtoken';
 const LS_CLIENT = 'ritm:gclient';
 
-interface Stored { token: string; exp: number }
+interface Stored { token: string; exp: number; scope?: string }
 
-interface TokenResponse { access_token?: string; expires_in?: number; error?: string; error_description?: string }
+interface TokenResponse { access_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string }
 interface TokenClient { requestAccessToken: (o?: { prompt?: string }) => void }
 declare global {
   interface Window {
@@ -31,6 +34,14 @@ export function validToken(): string | null {
     const s = JSON.parse(localStorage.getItem(LS_TOKEN) ?? 'null') as Stored | null;
     return s && s.exp > Date.now() + 60_000 ? s.token : null;
   } catch { return null; }
+}
+
+/** Разрешил ли пользователь создавать видимые файлы (для резервных копий) */
+export function canWriteFiles(): boolean {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_TOKEN) ?? 'null') as Stored | null;
+    return !!s?.scope?.includes(SCOPE_FILE);
+  } catch { return false; }
 }
 
 export function forgetToken() {
@@ -74,7 +85,7 @@ export async function requestToken(): Promise<string> {
       scope: SCOPE,
       callback: (r) => {
         if (r.error || !r.access_token) { rej(new Error(r.error_description || r.error || 'Google не выдал доступ')); return; }
-        localStorage.setItem(LS_TOKEN, JSON.stringify({ token: r.access_token, exp: Date.now() + (r.expires_in ?? 3600) * 1000 }));
+        localStorage.setItem(LS_TOKEN, JSON.stringify({ token: r.access_token, exp: Date.now() + (r.expires_in ?? 3600) * 1000, scope: r.scope ?? '' }));
         res(r.access_token);
       },
       error_callback: (e) => rej(new Error(e.type === 'popup_closed' ? 'Окно входа закрыто' : e.message || e.type)),

@@ -1,4 +1,5 @@
 import type { CalEvent, Sphere } from '../types';
+import { isPast, logicalNow } from './time';
 
 export interface Progress {
   /** В единицах нормы: минуты или разы */
@@ -17,6 +18,7 @@ export const dur = (e: Pick<CalEvent, 'startMin' | 'endMin'>) => e.endMin - e.st
  */
 export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: Map<string, Set<string>>): Map<string, Progress> {
   const byId = new Map(spheres.map((s) => [s.id, s]));
+  const now = logicalNow();
   const res = new Map<string, Progress>(spheres.map((s) => [s.id, { done: 0, planned: 0, minutes: 0 }]));
   for (const e of events) {
     if (e.status === 'skipped' || !e.sphereId) continue;
@@ -24,7 +26,8 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
     const p = res.get(e.sphereId);
     if (!s || !p) continue;
     const v = s.normKind === 'count' ? 1 : dur(e);
-    if (e.status === 'done') p.done += v; else p.planned += v;
+    // Прошедшее событие = сделано, будущее = в плане
+    if (isPast(e, now)) p.done += v; else p.planned += v;
     p.minutes += dur(e);
   }
   if (extraDone) {
@@ -32,10 +35,10 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
       const extra = extraDone.get(s.id);
       if (!extra || s.normKind !== 'count') continue;
       const mine = events.filter((e) => e.sphereId === s.id && e.status !== 'skipped');
-      const doneDays = new Set([...extra, ...mine.filter((e) => e.status === 'done').map((e) => e.date)]);
+      const doneDays = new Set([...extra, ...mine.filter((e) => isPast(e, now)).map((e) => e.date)]);
       const p = res.get(s.id)!;
       p.done = doneDays.size;
-      p.planned = mine.filter((e) => e.status === 'planned' && !doneDays.has(e.date)).length;
+      p.planned = mine.filter((e) => !isPast(e, now) && !doneDays.has(e.date)).length;
     }
   }
   return res;

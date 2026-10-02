@@ -117,3 +117,13 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (b === 1) return one;
   return many;
 }
+
+/** Событие уже прошло (закончилось) — по новому правилу это значит «сделано» */
+export function isPast(e: { date: string; endMin: number }, now = logicalNow()): boolean {
+  return e.date < now.date || (e.date === now.date && e.endMin <= now.min);
+}
+
+/** Сделано = прошло и не помечено пропущенным (старая отметка) */
+export function isDone(e: { date: string; endMin: number; status?: string }, now = logicalNow()): boolean {
+  return e.status !== 'skipped' && isPast(e, now);
+}

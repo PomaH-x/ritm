@@ -45,7 +45,7 @@ export const BUILTIN_SECTIONS: SectionDef[] = [
     key: 'ege', title: 'ЕГЭ', emoji: '📐', color: '#EC6FCF', kind: 'generic',
     fields: [
       n('minutes', 'Занимался', 'мин', 15, { auto: 'sphereMinutes' }),
-      n('variants', 'Решено вариантов', 'шт.', 1),
+      n('variants', 'Решено вариантов', 'шт.', 1, { auto: 'trialsCount' }),
       b('part1', 'Первая часть 20–30 минут'),
       t('topics', 'Что разбирал'),
     ],

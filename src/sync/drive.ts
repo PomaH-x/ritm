@@ -38,3 +38,31 @@ export async function upload(token: string, id: string | null, data: unknown): P
   });
   return ((await r.json()) as { id: string }).id;
 }
+
+// ---------- Видимые резервные копии ----------
+
+const FOLDER = 'Ритм — резервные копии';
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+async function ensureFolder(token: string): Promise<string> {
+  const q = encodeURIComponent(`name='${FOLDER}' and mimeType='${FOLDER_MIME}' and trashed=false`);
+  const r = await call(token, `${API}?q=${q}&fields=files(id)`);
+  const j = (await r.json()) as { files: { id: string }[] };
+  if (j.files[0]) return j.files[0].id;
+  const c = await call(token, `${API}?fields=id`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: FOLDER, mimeType: FOLDER_MIME }),
+  });
+  return ((await c.json()) as { id: string }).id;
+}
+
+/** Кладёт копию в папку «Ритм — резервные копии» и оставляет только последние keep штук */
+export async function uploadBackup(token: string, name: string, data: unknown, keep = 8): Promise<void> {
+  const folder = await ensureFolder(token);
+  const boundary = 'ritm' + Math.random().toString(36).slice(2);
+  const meta = JSON.stringify({ name, parents: [folder], mimeType: 'application/json' });
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
+  await call(token, `${UPLOAD}?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body });
+  const q = encodeURIComponent(`'${folder}' in parents and trashed=false`);
+  const list = (await (await call(token, `${API}?q=${q}&orderBy=createdTime desc&fields=files(id,name)`)).json()) as { files: { id: string }[] };
+  for (const f of list.files.slice(keep)) await call(token, `${API}/${f.id}`, { method: 'DELETE' });
+}
