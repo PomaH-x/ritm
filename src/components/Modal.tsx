@@ -12,6 +12,9 @@ interface Props {
 export default function Modal({ title, subtitle, onClose, children, footer, wide }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
+  // На телефоне после касания, открывшего окно, браузер присылает ещё и «клик» в ту же точку —
+  // первые полсекунды клики игнорируем, чтобы он не нажал кнопку внутри окна
+  const openedAt = useRef(Date.now());
   closeRef.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
@@ -22,7 +25,9 @@ export default function Modal({ title, subtitle, onClose, children, footer, wide
     return () => { window.removeEventListener('keydown', onKey); prev?.focus?.({ preventScroll: true }); };
   }, []);
   return (
-    <div className="modal-back" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal-back"
+      onPointerDown={(e) => { if (e.target === e.currentTarget && Date.now() - openedAt.current > 400) onClose(); }}
+      onClickCapture={(e) => { if (Date.now() - openedAt.current < 450) { e.preventDefault(); e.stopPropagation(); } }}>
       <div className={'modal' + (wide ? ' is-wide' : '')} role="dialog" aria-modal="true" ref={ref} tabIndex={-1}>
         <header className="modal-head">
           <div>

@@ -122,7 +122,7 @@ export default function WeekCalendar(p: Props) {
       const resize = !!t.closest('[data-resize]');
       g = {
         kind: resize ? 'resize' : 'move', pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
-        active: !isTouch || resize, moved: false, dayIdx: days.indexOf(ev.date), anchor: 0, rawMin, ev,
+        active: !isTouch, moved: false, dayIdx: days.indexOf(ev.date), anchor: 0, rawMin, ev,
         grab: rawMin - ev.startMin,
       };
     } else {

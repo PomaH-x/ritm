@@ -293,7 +293,7 @@ input[type="time"], input[type="number"] { font-variant-numeric: tabular-nums; }
 .modal.is-wide { width: min(760px, 100%); }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 10px; }
 .modal-sub { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
-.modal-body { padding: 6px 20px 16px; overflow: auto; }
+.modal-body { padding: 6px 20px 16px; overflow: auto; min-height: 0; overscroll-behavior: contain; }
 .modal-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
@@ -482,7 +482,7 @@ input[type="time"], input[type="number"] { font-variant-numeric: tabular-nums; }
   .cal-head { display: none; }
   .ev-title { font-size: 14px; }
   .modal-back { place-items: end stretch; padding: 0; }
-  .modal { width: 100%; max-height: 90%; border-radius: 18px 18px 0 0; border-bottom: 0; }
+  .modal { width: 100%; max-height: 90vh; max-height: 90dvh; border-radius: 18px 18px 0 0; border-bottom: 0; }
   .row3 { grid-template-columns: 1fr 1fr; }
   .row3 > :first-child { grid-column: 1 / -1; }
   .page { padding: 16px 14px 32px; }
@@ -627,3 +627,10 @@ a.btn { text-decoration: none; color: inherit; }
 .trial-tasks button { height: 32px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
 .trial-tasks button.is-on { background: color-mix(in srgb, #E5534B 30%, var(--surface)); border-color: #E5534B; color: var(--text); }
 .trial-add { align-self: flex-start; }
+
+/* Поля дат в итогах финансов */
+.fin input[type="date"] {
+  width: 100%; min-height: 38px; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none; font-variant-numeric: tabular-nums;
+}
+.fin input[type="date"]:focus { border-color: var(--focus); }

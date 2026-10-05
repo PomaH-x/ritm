@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import WeekCalendar from '../components/WeekCalendar';
 import SlotSheet from '../components/SlotSheet';
 import EventEditor, { type Draft } from '../components/EventEditor';
 import NormsPanel from '../components/NormsPanel';
 import { toast } from '../components/Toast';
 import { choose } from '../components/Confirm';
-import RecurringModal from '../components/RecurringModal';
 import SyncButton from '../components/SyncButton';
-import { createEvent, createSeries, db, deleteEvent, endSeriesFrom, makeRecurring, materialize, updateEvent, type Repeat } from '../db';
+import { createEvent, createSeries, db, deleteEvent, endSeriesFrom, materialize, updateEvent, type Repeat } from '../db';
 import { useEventsBetween, useMedia, useNow, useProgram, useSectionLogs, useSectionsConfig, useSettings, useSpheres } from '../lib/hooks';
 import { sportDayStatus } from '../lib/sport';
 import type { Slot } from '../lib/recommend';
@@ -41,15 +40,6 @@ export default function WeekPage() {
 
   const [slot, setSlot] = useState<Slot | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [menu, setMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menu) return;
-    const off = (e: PointerEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
-    window.addEventListener('pointerdown', off);
-    return () => window.removeEventListener('pointerdown', off);
-  }, [menu]);
 
   const visibleDays = narrow ? [days[dayIdx]] : days;
   const isCurrentWeek = days.includes(now.date);
@@ -145,8 +135,6 @@ export default function WeekPage() {
     undoable(`Удалено: ${d.title}`, () => updateEvent(id, { deleted: 0 }));
   };
 
-  const [recurring, setRecurring] = useState(false);
-
   useEffect(() => { void materialize(days[0], days[6]); }, [days]);
 
   return (
@@ -164,14 +152,6 @@ export default function WeekPage() {
           </div>
           <span className="spacer" />
           <SyncButton />
-          <div className="menu-wrap" ref={menuRef}>
-            <button type="button" className="icon-btn" aria-label="Действия с неделей" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>⋯</button>
-            {menu && (
-              <div className="menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); setRecurring(true); }}>Сделать события этой недели повторяющимися…</button>
-              </div>
-            )}
-          </div>
           <button type="button" className="btn primary" onClick={() => setDraft(newEventDraft())}>Добавить</button>
         </div>
 
@@ -244,15 +224,6 @@ export default function WeekPage() {
         />
       )}
 
-      {recurring && (
-        <RecurringModal events={events} spheres={spheres} weekLabel={fmtWeekRange(weekStart)}
-          onClose={() => setRecurring(false)}
-          onConfirm={async (list) => {
-            await makeRecurring(list);
-            setRecurring(false);
-            toast(`Повторяются каждую неделю: ${list.length}`);
-          }} />
-      )}
     </div>
   );
 }
