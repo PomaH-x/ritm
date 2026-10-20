@@ -223,12 +223,6 @@ export function weekTemplate(b: Bundle, weekStart: string, today: string): strin
     });
   }
 
-  const ci = r['чек-ин'] as Obj | undefined;
-  if (ci && Object.keys(ci).length) {
-    L.push('', '🗓️ ЧЕК-ИН');
-    for (const [k, v] of Object.entries(ci)) L.push(`${k}: ${typeof v === 'number' ? `${v}/10` : `«${String(v).trim()}»`}`);
-  }
-
   const tasks = r['задачи'] as Obj;
   const doneT = tasks['сделано за неделю'];
   const openT = openTasks(b, upto);

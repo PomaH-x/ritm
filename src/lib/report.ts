@@ -403,11 +403,6 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
   const emptyDays = all.filter((x) => x.filled.length === 0).length;
   if (emptyDays) warn.push(`Дней без отчёта: ${emptyDays}`);
 
-  // Чек-ин недели
-  const ci = b.logs.find((l) => l.section === 'weekly' && l.date === weekStart)?.values ?? {};
-  const checkin: Obj = {};
-  for (const f of WEEKLY_FIELDS) if (!empty(ci[f.key])) checkin[f.label] = ci[f.key];
-
   const yr = parseISODate(addDays(weekStart, 6)).getFullYear();
   return {
     'тип': 'отчёт за неделю',
@@ -418,7 +413,6 @@ export function weekReport(b: Bundle, weekStart: string, today: string): Obj {
     'цифровая гигиена': digital, 'финансы': finance, 'гигиена': hygiene, 'состояние': state,
     'задачи': { 'сделано за неделю': doneTasks.length ? doneTasks : 'нет', 'открытые': openTasks.length ? openTasks : 'нет' },
     'по дням': perDay,
-    ...(Object.keys(checkin).length ? { 'чек-ин': checkin } : {}),
     'отклонения от плана': [...warn, ...collectDayWarnings(all)],
     'получилось по плану': good,
   };
@@ -463,16 +457,3 @@ function collectDayWarnings(all: { date: string; flags: Flags }[]): string[] {
   return [...counts.values()].filter((c) => c.days.length >= 2)
     .map((c) => `Повторялось ${c.days.length} раза (${c.days.join(', ')}), например: ${c.example}`);
 }
-
-export const WEEKLY_FIELDS: FieldDef[] = [
-  { key: 'rating', label: 'Оценка недели', type: 'scale' },
-  { key: 'good', label: 'Что получилось', type: 'note' },
-  { key: 'hard', label: 'Что мешало, где сорвался', type: 'note' },
-  { key: 'projects', label: 'Проекты (Claude): что сделано', type: 'note' },
-  { key: 'improve', label: 'Что улучшить на следующей неделе', type: 'note' },
-];
-
-export const WEEKLY_SECTION: SectionDef = {
-  key: 'weekly', title: 'Чек-ин недели', emoji: '🗓️', color: '#A98BFF', kind: 'generic', fields: WEEKLY_FIELDS,
-  hint: 'Воскресенье вечером',
-};

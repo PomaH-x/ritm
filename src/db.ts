@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { CalEvent, KV, LogEntry, SectionsConfig, Series, Settings, Sphere, Task, TemplateItem, Workout } from './types';
+import type { CalEvent, KV, LessonMark, LogEntry, Payment, Premium, SectionsConfig, Series, Settings, Sphere, Student, Subscription, Task, TemplateItem, Workout } from './types';
 import { EMPTY_CONFIG } from './lib/sections';
 import { defaultProgram } from './lib/sport';
 import { addDays, logicalNow, parseISODate, weekStartOf, weekday } from './lib/time';
@@ -11,6 +11,11 @@ class RitmDB extends Dexie {
   logs!: Table<LogEntry, string>;
   tasks!: Table<Task, string>;
   series!: Table<Series, string>;
+  students!: Table<Student, string>;
+  subs!: Table<Subscription, string>;
+  marks!: Table<LessonMark, string>;
+  payments!: Table<Payment, string>;
+  premiums!: Table<Premium, string>;
   constructor() {
     super('ritm');
     this.version(1).stores({
@@ -23,6 +28,14 @@ class RitmDB extends Dexie {
       tasks: 'id, done, updatedAt',
     });
     this.version(3).stores({ series: 'id, updatedAt' });
+    // Ученики и деньги — только новые таблицы, старые не трогаем
+    this.version(4).stores({
+      students: 'id, updatedAt',
+      subs: 'id, studentId, start, updatedAt',
+      marks: 'id, eventId, studentId, date, updatedAt',
+      payments: 'id, studentId, date, eventId, updatedAt',
+      premiums: 'id, week, updatedAt',
+    });
   }
 }
 
@@ -124,12 +137,13 @@ export async function materializeAll() {
 
 export type Repeat = { interval: number; weekdays: number[]; until: string | null };
 
-export async function createSeries(e: Pick<CalEvent, 'sphereId' | 'title' | 'date' | 'startMin' | 'endMin' | 'notes'>, r: Repeat) {
+export async function createSeries(e: Pick<CalEvent, 'sphereId' | 'title' | 'date' | 'startMin' | 'endMin' | 'notes'> & { students?: string[] }, r: Repeat) {
   const now = Date.now();
   const s: Series = {
     id: uid(), createdAt: now, updatedAt: now, deleted: 0,
     sphereId: e.sphereId, title: e.title, startMin: e.startMin, endMin: e.endMin, notes: e.notes,
     weekdays: r.weekdays.length ? r.weekdays : [weekday(e.date)], interval: Math.max(1, r.interval), startDate: e.date, until: r.until,
+    ...(e.students ? { students: e.students } : {}),
   };
   await db.series.add(s);
   await materializeAll();
@@ -387,49 +401,39 @@ async function doSeed() {
 
 // ---------- Резервная копия ----------
 
-export interface Backup {
+/** Все таблицы, которые попадают в копии и синхронизацию. Ключ записи — id (у kv — key). */
+export const SYNC_TABLES = ['spheres', 'events', 'kv', 'logs', 'tasks', 'series', 'students', 'subs', 'marks', 'payments', 'premiums'] as const;
+export type SyncTable = (typeof SYNC_TABLES)[number];
+type Row = { updatedAt: number; id?: string; key?: string };
+export const rowKey = (r: Row) => (r.id ?? r.key) as string;
+export const tableOf = (t: SyncTable) => (db as unknown as Record<SyncTable, Table<Row, string>>)[t];
+
+export type Backup = {
   app: 'ritm';
   version: 1;
   exportedAt: string;
-  spheres: Sphere[];
-  events: CalEvent[];
-  kv: KV[];
-  logs?: LogEntry[];
-  tasks?: Task[];
-  series?: Series[];
-}
+} & { [K in SyncTable]?: Row[] };
 
 export async function exportAll(): Promise<Backup> {
-  return {
-    app: 'ritm', version: 1, exportedAt: new Date().toISOString(),
-    spheres: await db.spheres.toArray(),
-    events: await db.events.toArray(),
-    kv: await db.kv.toArray(),
-    logs: await db.logs.toArray(),
-    tasks: await db.tasks.toArray(),
-    series: await db.series.toArray(),
-  };
+  const out: Backup = { app: 'ritm', version: 1, exportedAt: new Date().toISOString() };
+  for (const t of SYNC_TABLES) out[t] = await tableOf(t).toArray();
+  return out;
 }
 
-/** Слияние по правилу «побеждает более свежая правка» — тот же принцип будет у синхронизации */
+/** Слияние по правилу «побеждает более свежая правка» — тот же принцип у синхронизации */
 export async function importAll(data: Backup): Promise<{ added: number; updated: number }> {
   if (data?.app !== 'ritm') throw new Error('Это не резервная копия Ритма');
   let added = 0;
   let updated = 0;
-  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks, db.series], async () => {
-    const merge = async <T extends { updatedAt: number }>(table: Table<T, string>, rows: T[], keyOf: (r: T) => string) => {
-      for (const r of rows ?? []) {
-        const cur = await table.get(keyOf(r));
+  await db.transaction('rw', SYNC_TABLES.map(tableOf), async () => {
+    for (const t of SYNC_TABLES) {
+      const table = tableOf(t);
+      for (const r of data[t] ?? []) {
+        const cur = await table.get(rowKey(r));
         if (!cur) { await table.put(r); added++; }
         else if (r.updatedAt > cur.updatedAt) { await table.put(r); updated++; }
       }
-    };
-    await merge(db.spheres, data.spheres, (r) => r.id);
-    await merge(db.events, data.events, (r) => r.id);
-    await merge(db.kv, data.kv, (r) => r.key);
-    await merge(db.logs, data.logs ?? [], (r) => r.id);
-    await merge(db.tasks, data.tasks ?? [], (r) => r.id);
-    await merge(db.series, data.series ?? [], (r) => r.id);
+    }
   });
   return { added, updated };
 }

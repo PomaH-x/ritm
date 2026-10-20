@@ -6,7 +6,7 @@
  */
 import Dexie from 'dexie';
 import { useSyncExternalStore } from 'react';
-import { db, exportAll, importAll, type Backup } from '../db';
+import { db, exportAll, importAll, rowKey, SYNC_TABLES, tableOf, type Backup } from '../db';
 import { AuthError, download, findFile, upload, uploadBackup } from './drive';
 import { canWriteFiles, clientId, forgetToken, requestToken, validToken } from './google';
 import { toISODate } from '../lib/time';
@@ -57,14 +57,11 @@ function isBackup(x: unknown): x is Backup {
 
 async function replaceLocal(remote: Backup) {
   ignoreUntil = Date.now() + 3000;
-  await db.transaction('rw', [db.spheres, db.events, db.kv, db.logs, db.tasks, db.series], async () => {
-    await Promise.all([db.spheres.clear(), db.events.clear(), db.kv.clear(), db.logs.clear(), db.tasks.clear(), db.series.clear()]);
-    await db.series.bulkPut(remote.series ?? []);
-    await db.spheres.bulkPut(remote.spheres ?? []);
-    await db.events.bulkPut(remote.events ?? []);
-    await db.kv.bulkPut(remote.kv ?? []);
-    await db.logs.bulkPut(remote.logs ?? []);
-    await db.tasks.bulkPut(remote.tasks ?? []);
+  await db.transaction('rw', SYNC_TABLES.map(tableOf), async () => {
+    for (const t of SYNC_TABLES) {
+      await tableOf(t).clear();
+      await tableOf(t).bulkPut(remote[t] ?? []);
+    }
   });
   ignoreUntil = Date.now() + 1500;
 }
@@ -72,20 +69,11 @@ async function replaceLocal(remote: Backup) {
 /** Есть ли у нас что-то, чего нет в файле на Диске (или оно новее) */
 function localAhead(local: Backup, remote: Backup | null): boolean {
   if (!remote) return true;
-  const idx = new Map<string, number>();
-  const add = (t: string, rows: { updatedAt: number }[] | undefined, key: (r: never) => string) =>
-    (rows ?? []).forEach((r) => idx.set(t + ':' + key(r as never), r.updatedAt));
-  add('s', remote.spheres, (r: { id: string }) => r.id);
-  add('e', remote.events, (r: { id: string }) => r.id);
-  add('k', remote.kv, (r: { key: string }) => r.key);
-  add('l', remote.logs, (r: { id: string }) => r.id);
-  add('t', remote.tasks, (r: { id: string }) => r.id);
-  add('r', remote.series, (r: { id: string }) => r.id);
-  const newer = (t: string, rows: { updatedAt: number }[] | undefined, key: (r: never) => string) =>
-    (rows ?? []).some((r) => (idx.get(t + ':' + key(r as never)) ?? -1) < r.updatedAt);
-  return newer('s', local.spheres, (r: { id: string }) => r.id) || newer('e', local.events, (r: { id: string }) => r.id)
-    || newer('k', local.kv, (r: { key: string }) => r.key) || newer('l', local.logs, (r: { id: string }) => r.id)
-    || newer('t', local.tasks, (r: { id: string }) => r.id) || newer('r', local.series, (r: { id: string }) => r.id);
+  for (const t of SYNC_TABLES) {
+    const idx = new Map((remote[t] ?? []).map((r) => [rowKey(r), r.updatedAt]));
+    if ((local[t] ?? []).some((r) => (idx.get(rowKey(r)) ?? -1) < r.updatedAt)) return true;
+  }
+  return false;
 }
 
 async function run(interactive: boolean, mode?: Mode) {

@@ -6,7 +6,7 @@ import WeekPage from './pages/WeekPage';
 import SpheresPage from './pages/SpheresPage';
 import SettingsPage from './pages/SettingsPage';
 import DayPage from './pages/DayPage';
-import ReportsPage from './pages/ReportsPage';
+import StudentsPage from './pages/StudentsPage';
 import ProgressPage from './pages/ProgressPage';
 import { ToastHost } from './components/Toast';
 import { ChoiceHost, ConfirmHost } from './components/Confirm';
@@ -21,8 +21,8 @@ const icons: Record<Route, JSX.Element> = {
   day: (
     <svg viewBox="0 0 24 24" aria-hidden><path d="M7 4.5h10a2 2 0 0 1 2 2v13l-3-2-3 2-3-2-3 2v-13a2 2 0 0 1 2-2Z" /><path d="M9 9.5l2 2 4-4" /></svg>
   ),
-  reports: (
-    <svg viewBox="0 0 24 24" aria-hidden><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 8.5h2" /></svg>
+  students: (
+    <svg viewBox="0 0 24 24" aria-hidden><path d="M2.5 9.5 12 5l9.5 4.5L12 14z" /><path d="M6.5 11.5v4.2c1.4 1.5 3.3 2.3 5.5 2.3s4.1-.8 5.5-2.3v-4.2" /><path d="M21.5 9.5v5" /></svg>
   ),
   progress: (
     <svg viewBox="0 0 24 24" aria-hidden><path d="M4 19h16" /><path d="M5 15l4-4 3 3 6-7" /><path d="M15 7h3v3" /></svg>
@@ -35,7 +35,7 @@ const icons: Record<Route, JSX.Element> = {
   ),
 };
 
-const NAV: [Route, string][] = [['week', 'Неделя'], ['day', 'День'], ['reports', 'Отчёты'], ['progress', 'Прогресс'], ['spheres', 'Сферы'], ['settings', 'Настройки']];
+const NAV: [Route, string][] = [['week', 'Неделя'], ['day', 'День'], ['students', 'Ученики'], ['progress', 'Прогресс'], ['spheres', 'Сферы'], ['settings', 'Настройки']];
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -93,7 +93,7 @@ export default function App() {
       <main className="content">
         {route === 'week' && <WeekPage />}
         {route === 'day' && <DayPage />}
-        {route === 'reports' && <ReportsPage />}
+        {route === 'students' && <StudentsPage />}
         {route === 'progress' && <ProgressPage />}
         {route === 'spheres' && <SpheresPage />}
         {route === 'settings' && <SettingsPage />}

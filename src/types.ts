@@ -48,6 +48,10 @@ export interface CalEvent extends Base {
   notes: string;
   /** Если событие — повторение серии */
   seriesId?: string;
+  /** Ученики занятия. Не задано — берутся из серии */
+  students?: string[];
+  /** Формат для тарифа центра, если задан вручную */
+  amKind?: LessonKind;
 }
 
 /** Повторяющееся событие: каждые interval недель по выбранным дням */
@@ -61,6 +65,8 @@ export interface Series extends Base {
   startDate: string;
   until: string | null;
   notes: string;
+  students?: string[];
+  amKind?: LessonKind;
 }
 
 export interface Settings {
@@ -172,4 +178,86 @@ export interface Workout {
   weekdays: number[];
   daily: boolean;
   exercises: Exercise[];
+}
+
+// ---------- Ученики и оплаты ----------
+
+/** am — ученик центра (дань Алексею Максимовичу), own — мой ученик */
+export type StudentSource = 'am' | 'own';
+export type LessonKind = 'group' | 'ind';
+export type PlanKind = 'single' | 'sub4' | 'sub8';
+
+export interface Student extends Base {
+  name: string;
+  /** Как писать в отчёте: «продал абонемент Иосифу» */
+  dative: string;
+  source: StudentSource;
+  /** Устарело: формат теперь определяется у каждого занятия */
+  kind: LessonKind;
+  /** Своя ставка за час у моего ученика; null — общая */
+  rate: number | null;
+  note: string;
+  archived: boolean;
+}
+
+export interface Tariff { kind: LessonKind; hours: number; plan: PlanKind; total: number; teacher: number; center: number }
+/** Тарифы центра, действующие с даты */
+export interface TariffSet { from: string; items: Tariff[] }
+/** Моя ставка за час, действующая с даты */
+export interface RateSet { from: string; rate: number }
+
+export interface Subscription extends Base {
+  studentId: string;
+  size: 4 | 8;
+  /** Срок в днях: 30 или 60 */
+  days: number;
+  /** Дата продажи и активации */
+  start: string;
+  /** Продление за болезнь преподавателя или праздники */
+  extraDays: number;
+  kind: LessonKind;
+  hours: number;
+  /** Цены на момент продажи */
+  total: number;
+  teacher: number;
+  center: number;
+  /** Когда получены деньги; null — ещё не оплачен */
+  paidDate: string | null;
+  note: string;
+}
+
+/** Отметка ученика на занятии. id = событие|ученик */
+export interface LessonMark extends Base {
+  eventId: string;
+  studentId: string;
+  date: string;
+  cancelled: 0 | 1;
+  reason: string;
+}
+
+/** Деньги от ученика. lesson — за конкретное занятие, topup — пополнение баланса */
+export interface Payment extends Base {
+  studentId: string;
+  date: string;
+  amount: number;
+  /** Сколько из этого — мой доход (для учеников центра — без дани) */
+  income: number;
+  kind: 'lesson' | 'topup';
+  eventId: string | null;
+}
+
+export interface Premium extends Base {
+  /** Понедельник недели, в которой премия уменьшает дань */
+  week: string;
+  amount: number;
+  note: string;
+}
+
+export interface MoneySettings {
+  /** С какой даты вести учёт оплат и дани */
+  trackFrom: string | null;
+  amSphereId: string | null;
+  ownSphereId: string | null;
+  tariffs: TariffSet[];
+  rates: RateSet[];
 }

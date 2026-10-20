@@ -24,11 +24,14 @@
     "src"
   ],
   "exclude": [
-    "src/coach/llm.ts",
-    "src/coach/gas.ts",
     "src/coach/coach.ts",
+    "src/coach/gas.ts",
+    "src/coach/llm.ts",
     "src/components/CoachPanel.tsx",
     "src/components/CoachSettings.tsx",
-    "src/components/Markdown.tsx"
+    "src/components/Markdown.tsx",
+    "src/components/RecurringModal.tsx",
+    "src/components/ReportView.tsx",
+    "src/pages/ReportsPage.tsx"
   ]
 }

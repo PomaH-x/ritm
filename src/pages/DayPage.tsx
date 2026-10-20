@@ -7,7 +7,7 @@ import FieldsEditor, { NewSectionModal } from '../components/FieldsEditor';
 import ProgramEditor, { HarderModal } from '../components/ProgramEditor';
 import { saveSectionsConfig } from '../db';
 import SyncButton from '../components/SyncButton';
-import SendToChat from '../components/SendToChat';
+import ReportsBlock from '../components/ReportsBlock';
 import EgeTrials from '../components/EgeTrials';
 import { TRIALS, trialsOf } from '../lib/ege';
 import { useEventsBetween, useLogsOn, useNow, useProgram, useSectionLogs, useSectionsConfig, useSpheres } from '../lib/hooks';
@@ -63,8 +63,8 @@ export default function DayPage() {
 
       {isToday && weekday(date) === 7 && (
         <div className="banner">
-          <span>Воскресенье — время подвести итоги недели.</span>
-          <a className="btn ghost small" href="#/reports/week">Открыть чек-ин</a>
+          <span>Воскресенье — пора отправить отчёт за неделю.</span>
+          <button type="button" className="btn ghost small" onClick={() => document.getElementById('reports')?.scrollIntoView({ behavior: 'smooth' })}>К отчётам</button>
         </div>
       )}
 
@@ -88,7 +88,7 @@ export default function DayPage() {
         <TasksCard today={now.date} />
       </div>
 
-      <SendToChat kind="day" date={date} />
+      <ReportsBlock date={date} />
 
       <div className="day-foot">
         <button type="button" className="btn ghost" onClick={() => setNewSection(true)}>Новый раздел</button>
