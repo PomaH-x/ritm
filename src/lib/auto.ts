@@ -1,5 +1,5 @@
 import type { CalEvent, FieldDef, SectionDef, Sphere } from '../types';
-import { dur } from './stats';
+import { dur, unionMinutes } from './stats';
 import { isDone } from './time';
 
 const toMin = (s: unknown): number | null => {
@@ -25,6 +25,8 @@ export interface AutoCtx {
   spheres: Sphere[];
   /** Сколько пробных вариантов ЕГЭ записано за день */
   trialsCount?: number;
+  /** Деньги от учеников, полученные в этот день (центр — без дани) */
+  workIncome?: number;
 }
 
 /** Значение, которое подставляется, пока поле не заполнено вручную */
@@ -32,6 +34,7 @@ export function autoValue(f: FieldDef, sec: SectionDef, values: Record<string, u
   if (!f.auto) return null;
   if (f.auto === 'sleepHours') return sleepHours(values.bed, values.wake);
   if (f.auto === 'trialsCount') return ctx.trialsCount ? ctx.trialsCount : null;
+  if (f.auto === 'workIncome') return ctx.workIncome ? Math.round(ctx.workIncome) : null;
   if (f.auto === 'sphereMinutes') {
     if (!sec.linkSphereId) return null;
     const m = ctx.dayEvents
@@ -41,9 +44,7 @@ export function autoValue(f: FieldDef, sec: SectionDef, values: Record<string, u
   }
   if (f.auto === 'groupHours') {
     const ids = new Set(ctx.spheres.filter((s) => s.group === sec.linkGroup).map((s) => s.id));
-    const m = ctx.dayEvents
-      .filter((e) => e.sphereId && ids.has(e.sphereId) && isDone(e))
-      .reduce((a, e) => a + dur(e), 0);
+    const m = unionMinutes(ctx.dayEvents.filter((e) => e.sphereId && ids.has(e.sphereId) && isDone(e)));
     return m > 0 ? Math.round((m / 60) * 4) / 4 : null;
   }
   return null;
@@ -54,5 +55,6 @@ export function autoLabel(f: FieldDef): string {
   if (f.auto === 'sphereMinutes') return 'из расписания (прошедшие события)';
   if (f.auto === 'groupHours') return 'из расписания (прошедшие занятия)';
   if (f.auto === 'trialsCount') return 'по записанным пробным вариантам';
+  if (f.auto === 'workIncome') return 'из оплат учеников (центр — без дани)';
   return '';
 }

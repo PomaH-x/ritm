@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
 import ImportWizard from '../components/ImportWizard';
 import StudentEditor from '../components/StudentEditor';
-import { getMoneySettings, rateFor, weeklyCount } from '../lib/money';
+import StudentCard from '../components/StudentCard';
+import SubForm from '../components/SubForm';
+import TopUpForm from '../components/TopUpForm';
+import AmReportCard from '../components/AmReportCard';
+import { activeSub, amDebt, buildLessons, loadMoney, money, ownBalance, rateFor, subEnd, subUsage, weeklyCount } from '../lib/money';
+import { useNow } from '../lib/hooks';
 import { logicalNow } from '../lib/time';
-import type { Student, StudentSource } from '../types';
+import type { Student, StudentSource, Subscription } from '../types';
 
 const nf = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n));
 /** Длительности занятий ученика по расписанию: «1,5 и 3 ч» */
@@ -20,31 +24,63 @@ export default function StudentsPage() {
   const [wizard, setWizard] = useState(false);
   const [edit, setEdit] = useState<Student | 'new' | null>(null);
   const [showArchive, setShowArchive] = useState(false);
-  const data = useLiveQuery(async () => {
-    const [students, series, m] = await Promise.all([db.students.toArray(), db.series.toArray(), getMoneySettings()]);
-    return { students: students.filter((s) => !s.deleted).sort((a, b) => a.name.localeCompare(b.name, 'ru')), series: series.filter((s) => !s.deleted), m };
-  }, []);
+  const [card, setCard] = useState<string | null>(null);
+  const [subForm, setSubForm] = useState<{ sub?: Subscription; studentId?: string } | null>(null);
+  const [topUp, setTopUp] = useState<{ student: Student; suggest?: number } | null>(null);
+  const now = useNow();
+  const data = useLiveQuery(loadMoney, []);
+  const lessons = useMemo(() => (data ? buildLessons(data, now) : []), [data, now]);
+  const used = useMemo(() => subUsage(lessons), [lessons]);
 
   const pick = (t: StudentSource) => { setTab(t); try { localStorage.setItem('ritm:students-tab', t); } catch { /* ок */ } };
   if (!data) return <div className="page"><p className="muted">Загрузка…</p></div>;
-  const { students, series, m } = data;
+  const { series, m } = data;
+  const students = [...data.students].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const list = students.filter((s) => s.source === tab && !s.archived);
   const archived = students.filter((s) => s.source === tab && s.archived);
   const count = (t: StudentSource) => students.filter((s) => s.source === t && !s.archived).length;
   const today = logicalNow().date;
+  const cardStudent = card ? students.find((s) => s.id === card) : undefined;
+
+  /** Деньги в строке списка: абонемент и долг — у учеников центра, баланс — у моих */
+  const moneyLine = (s: Student) => {
+    if (s.source === 'own') {
+      const b = ownBalance(data, lessons, s.id);
+      return b < 0 ? <span className="bad">долг {money(-b)}</span> : b > 0 ? <span className="ok">+{money(b)}</span> : null;
+    }
+    const sub = activeSub(data, s.id, today);
+    const n = sub ? used.get(sub.id) ?? 0 : 0;
+    const debt = amDebt(data, lessons, s.id);
+    return <>
+      {sub && n < sub.size && <span>абонемент {n}/{sub.size} до {subEnd(sub).split('-').reverse().slice(0, 2).join('.')}</span>}
+      {debt > 0 && <span className="bad">не оплачено {money(debt)}</span>}
+    </>;
+  };
 
   const row = (s: Student) => (
     <li key={s.id}>
-      <button type="button" className="st-row" onClick={() => setEdit(s)}>
+      <button type="button" className="st-row" onClick={() => setCard(s.id)}>
         <span className="st-name">{s.name}</span>
         <span className="st-meta">
           {s.source === 'am' ? durations(series, s.id) : `${nf(rateFor(m, today, s))} ₽/ч${s.rate != null ? ' (своя)' : ''}`}
           {' · '}{perWeek(weeklyCount(series, s.id))}
         </span>
         {s.note && <span className="st-note">{s.note}</span>}
+        <span className="st-money">{moneyLine(s)}</span>
       </button>
     </li>
   );
+
+  /** Формат и длительность абонемента — как у последнего занятия ученика */
+  const subDefaults = (id: string) => {
+    const last = [...lessons].reverse().find((l) => l.student.id === id && l.status.type !== 'cancelled');
+    return last ? { kind: last.kind, hours: last.hours } : {};
+  };
+
+  const ownTotals = tab === 'own' ? list.reduce((a, s) => {
+    const b = ownBalance(data, lessons, s.id);
+    return b < 0 ? { ...a, debt: a.debt - b } : { ...a, credit: a.credit + b };
+  }, { debt: 0, credit: 0 }) : null;
 
   return (
     <div className="page students">
@@ -67,7 +103,15 @@ export default function StudentsPage() {
         </section>
       ) : (
         <>
+          {tab === 'am' && <AmReportCard data={data} lessons={lessons} />}
+          {ownTotals && (ownTotals.debt > 0 || ownTotals.credit > 0) && (
+            <div className="st-totals">
+              {ownTotals.debt > 0 && <span>Должны: <b className="bad">{money(ownTotals.debt)}</b></span>}
+              {ownTotals.credit > 0 && <span>Оплачено вперёд: <b className="ok">{money(ownTotals.credit)}</b></span>}
+            </div>
+          )}
           <div className="btn-row st-tools">
+            {tab === 'am' && <button type="button" className="btn ghost small" onClick={() => setSubForm({})}>Продать абонемент</button>}
             <button type="button" className="btn ghost small" onClick={() => setEdit('new')}>Добавить ученика</button>
             <button type="button" className="btn ghost small" onClick={() => setWizard(true)}>Найти новых в расписании</button>
             <span className="muted st-since">Учёт с {m.trackFrom.split('-').reverse().join('.')}</span>
@@ -85,7 +129,19 @@ export default function StudentsPage() {
       )}
 
       {wizard && <ImportWizard onClose={() => setWizard(false)} />}
-      {edit && <StudentEditor student={edit === 'new' ? null : edit} source={tab} all={students} onClose={() => setEdit(null)} />}
+      {cardStudent && !edit && !subForm && !topUp && (
+        <StudentCard student={cardStudent} data={data} lessons={lessons} onClose={() => setCard(null)}
+          onEdit={() => setEdit(cardStudent)}
+          onTopUp={(suggest) => setTopUp({ student: cardStudent, suggest })}
+          onSellSub={() => setSubForm({ studentId: cardStudent.id })}
+          onOpenSub={(sub) => setSubForm({ sub })} />
+      )}
+      {subForm && (
+        <SubForm m={m} students={students} sub={subForm.sub} onClose={() => setSubForm(null)}
+          defaults={subForm.studentId ? { studentId: subForm.studentId, ...subDefaults(subForm.studentId) } : undefined} />
+      )}
+      {topUp && <TopUpForm student={topUp.student} suggest={topUp.suggest} onClose={() => setTopUp(null)} />}
+      {edit && <StudentEditor student={edit === 'new' ? null : edit} source={tab} all={students} onClose={() => { setEdit(null); if (edit !== 'new' && !students.some((x) => x.id === edit.id)) setCard(null); }} />}
     </div>
   );
 }

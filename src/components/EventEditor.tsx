@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Modal from './Modal';
 import DayPicker from './DayPicker';
-import type { CalEvent, Sphere } from '../types';
+import type { CalEvent, LessonKind, MoneySettings, Sphere, Student } from '../types';
 import type { Repeat } from '../db';
 import { fmtDur, fmtTime, parseTime, plural, WD_SHORT, weekday } from '../lib/time';
 
@@ -14,6 +14,9 @@ interface Props {
   onDelete?: () => void;
   onDuplicate?: () => void;
   onClose: () => void;
+  /** Ученики и настройки учёта — чтобы выбрать, кто на занятии */
+  people?: Student[];
+  money?: MoneySettings;
 }
 
 const WD_ACC = ['в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу', 'в воскресенье'];
@@ -26,7 +29,7 @@ export function repeatSummary(r: Repeat): string {
   return `Повторять ${every}${when}${until}`;
 }
 
-export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplicate, onClose }: Props) {
+export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplicate, onClose, people = [], money }: Props) {
   const [d, setD] = useState<Draft>(draft);
   const [start, setStart] = useState(fmtTime(draft.startMin));
   const [end, setEnd] = useState(fmtTime(draft.endMin));
@@ -84,6 +87,8 @@ export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplic
           )}
         </div>
 
+        <StudentsField d={d} setD={setD} people={people} money={money} />
+
         <div className="row3">
           <label className="field">
             <span>День</span>
@@ -135,5 +140,42 @@ export default function EventEditor({ draft, spheres, onSave, onDelete, onDuplic
         <button type="submit" hidden />
       </form>
     </Modal>
+  );
+}
+
+/** Ученики занятия и формат для тарифа центра */
+function StudentsField({ d, setD, people, money }: { d: Draft; setD: (d: Draft) => void; people: Student[]; money?: MoneySettings }) {
+  const source = d.sphereId && d.sphereId === money?.amSphereId ? 'am' : d.sphereId && d.sphereId === money?.ownSphereId ? 'own' : null;
+  const chosen = d.students ?? [];
+  if (!source && !chosen.length) return null;
+  const list = people.filter((p) => !p.archived && (p.source === source || chosen.includes(p.id)))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const toggle = (id: string) => setD({ ...d, students: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] });
+  const kinds: [LessonKind | undefined, string][] = [[undefined, 'Авто'], ['group', 'Групповое'], ['ind', 'Индивидуальное']];
+  return (
+    <div className="field">
+      <span>Ученики{source === 'am' ? ' центра' : source === 'own' ? ' (мои)' : ''}</span>
+      {list.length ? (
+        <div className="chips">
+          {list.map((p) => (
+            <button key={p.id} type="button" aria-pressed={chosen.includes(p.id)} className={'chip' + (chosen.includes(p.id) ? ' is-on plain' : '')}
+              style={{ ['--c' as string]: p.source === 'am' ? '#4F8CFF' : '#E5534B' }} onClick={() => toggle(p.id)}>{p.name}</button>
+          ))}
+        </div>
+      ) : <p className="hint">Учеников пока нет — добавь их в разделе «Ученики».</p>}
+      {source === 'am' && chosen.length > 0 && (
+        <div className="inline" style={{ marginTop: 4 }}>
+          <span className="muted" style={{ fontSize: 13 }}>Тариф центра</span>
+          <div className="seg">
+            {kinds.map(([k, l]) => (
+              <button key={l} type="button" className={d.amKind === k ? 'is-on' : ''} onClick={() => setD({ ...d, amKind: k })}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {source === 'am' && chosen.length > 0 && !d.amKind && (
+        <p className="hint">Авто: групповое, если в это время занимается ещё кто-то из учеников центра.</p>
+      )}
+    </div>
   );
 }

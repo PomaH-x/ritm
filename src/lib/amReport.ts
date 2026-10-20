@@ -27,6 +27,8 @@ export interface AmWeek {
   cancels: Lesson[];
   /** Проблемы, которые стоит поправить до отправки (в текст не идут) */
   warnings: string[];
+  /** Сколько занятий учеников центра на этой неделе ещё впереди */
+  planned: number;
 }
 
 export function amWeek(d: MoneyData, weekStart: string, lessons = buildLessons(d)): AmWeek {
@@ -40,12 +42,9 @@ export function amWeek(d: MoneyData, weekStart: string, lessons = buildLessons(d
   const premium = d.premiums.filter((p) => p.week === weekStart).reduce((a, p) => a + p.amount, 0);
   const total = singlesTribute + subs.reduce((a, s) => a + s.center, 0) - premium;
   const cancels = am.filter((l) => l.status.type === 'cancelled');
-  const warnings = [
-    ...singles.filter((l) => l.warn).map((l) => `${l.student.name}, ${l.date.split('-').reverse().slice(0, 2).join('.')}: ${l.warn}`),
-    ...am.filter((l) => l.status.type === 'planned').length
-      ? [`Ещё не прошло занятий учеников центра: ${am.filter((l) => l.status.type === 'planned').length} — они попадут в отчёт после того, как пройдут`] : [],
-  ];
-  return { weekStart, singles, singlesTribute, subs, premium, total, cancels, warnings };
+  const warnings = singles.filter((l) => l.warn).map((l) => `${l.student.name}, ${l.date.split('-').reverse().slice(0, 2).join('.')}: ${l.warn}`);
+  const planned = am.filter((l) => l.status.type === 'planned').length;
+  return { weekStart, singles, singlesTribute, subs, premium, total, cancels, warnings, planned };
 }
 
 export function amReportText(d: MoneyData, w: AmWeek): string {

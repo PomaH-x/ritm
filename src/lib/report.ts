@@ -7,10 +7,11 @@
 import { db, DEFAULT_SETTINGS } from '../db';
 import type { CalEvent, FieldDef, LogEntry, SectionDef, SectionsConfig, Settings, Sphere, Task, Workout } from '../types';
 import { EMPTY_CONFIG, resolveSections } from './sections';
-import { autoValue } from './auto';
+import { autoValue, type AutoCtx } from './auto';
+import { loadIncomeByDate } from './money';
 import { exerciseDone, fmtTarget, setsOf, sportDayStatus, targetFor } from './sport';
 import { topErrors, TRIALS, trialsIn, trialsOf } from './ege';
-import { dur, weekProgress } from './stats';
+import { weekProgress, unionMinutes } from './stats';
 import { addDays, fmtTime, fmtWeekRange, isPast, parseISODate, plural, WD_LONG, WD_SHORT, weekday, weekDays } from './time';
 
 export interface Bundle {
@@ -22,10 +23,12 @@ export interface Bundle {
   settings: Settings;
   sportAll: LogEntry[];
   tasks: Task[];
+  /** Доход от учеников по дням */
+  income: Map<string, number>;
 }
 
 export async function loadBundle(from: string, to: string): Promise<Bundle> {
-  const [logs, events, spheres, cfgRow, progRow, setRow, sportAll, tasks] = await Promise.all([
+  const [logs, events, spheres, cfgRow, progRow, setRow, sportAll, tasks, income] = await Promise.all([
     db.logs.where('date').between(from, to, true, true).toArray(),
     db.events.where('date').between(from, to, true, true).toArray(),
     db.spheres.orderBy('order').toArray(),
@@ -34,6 +37,7 @@ export async function loadBundle(from: string, to: string): Promise<Bundle> {
     db.kv.get('settings'),
     db.logs.where('section').equals('sport').toArray(),
     db.tasks.toArray(),
+    loadIncomeByDate(),
   ]);
   return {
     logs: logs.filter((l) => !l.deleted),
@@ -44,6 +48,7 @@ export async function loadBundle(from: string, to: string): Promise<Bundle> {
     settings: { ...DEFAULT_SETTINGS, ...((setRow?.value as Partial<Settings>) ?? {}) },
     sportAll: sportAll.filter((l) => !l.deleted),
     tasks: tasks.filter((t) => !t.deleted),
+    income,
   };
 }
 
@@ -72,12 +77,12 @@ function outValue(f: FieldDef, v: unknown): unknown {
 }
 
 /** Действующие значения раздела за день: ввод пользователя или автоподсчёт */
-function effective(sec: SectionDef, log: LogEntry | undefined, dayEvents: CalEvent[], spheres: Sphere[], trialsCount = 0) {
+function effective(sec: SectionDef, log: LogEntry | undefined, ctx: AutoCtx) {
   const values = log?.values ?? {};
   const out: Record<string, unknown> = {};
   let any = false;
   for (const f of sec.fields) {
-    const v = empty(values[f.key]) ? autoValue(f, sec, values, { dayEvents, spheres, trialsCount }) : values[f.key];
+    const v = empty(values[f.key]) ? autoValue(f, sec, values, ctx) : values[f.key];
     if (!empty(v)) { out[f.key] = v; any = true; }
   }
   // Неотмеченная галочка в заполненном разделе = «нет»
@@ -180,7 +185,7 @@ export function dayData(b: Bundle, date: string): DayData {
       if (log) { sport = sportDayStatus(log, b.program, wd); filled.push(sec.title); } else unfilled.push(sec.title);
       continue;
     }
-    const { values, any } = effective(sec, logs.get(sec.key), dayEvents, b.spheres, trialsOf(logs.get(TRIALS)).length);
+    const { values, any } = effective(sec, logs.get(sec.key), { dayEvents, spheres: b.spheres, trialsCount: trialsOf(logs.get(TRIALS)).length, workIncome: b.income.get(date) });
     if (any) { eff[sec.key] = values; filled.push(sec.title); } else unfilled.push(sec.title);
   }
   return { eff, sport, filled, unfilled, flags: dayFlags(date, eff, sport, planned) };
@@ -198,7 +203,7 @@ export function dayReport(b: Bundle, date: string): Obj {
 
   const byId = new Map(b.spheres.map((s) => [s.id, s]));
   const dayEvents = b.events.filter((e) => e.date === date && e.status !== 'skipped').sort((a, z) => a.startMin - z.startMin);
-  const workMin = sum(dayEvents.filter((e) => byId.get(e.sphereId ?? '')?.group === 'Работа').map(dur));
+  const workMin = unionMinutes(dayEvents.filter((e) => byId.get(e.sphereId ?? '')?.group === 'Работа'));
   const other = dayEvents.filter((e) => byId.get(e.sphereId ?? '')?.group !== 'Работа').map((e) =>
     `${fmtTime(e.startMin)}–${fmtTime(e.endMin)} ${byId.get(e.sphereId ?? '')?.name ?? 'без сферы'}: ${e.title} (${isPast(e) ? 'было' : 'запланировано'})`);
 

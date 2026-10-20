@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CalEvent, Settings, Sphere } from '../types';
 import type { Slot } from '../lib/recommend';
 import { dayNum, fmtDur, fmtHours, fmtTime, isoWeek, WD_SHORT, weekday } from '../lib/time';
-import { dur } from '../lib/stats';
+import { dur, unionMinutes } from '../lib/stats';
 
 interface Props {
   days: string[];
@@ -14,6 +14,8 @@ interface Props {
   onSelectSlot: (s: Slot) => void;
   onOpenEvent: (e: CalEvent) => void;
   onChangeEvent: (id: string, patch: Partial<CalEvent>) => void;
+  /** Значок оплаты занятий с учениками */
+  badges?: Map<string, 'paid' | 'unpaid' | 'cancelled'>;
 }
 
 type Preview =
@@ -232,9 +234,8 @@ export default function WeekCalendar(p: Props) {
     return lists.map(layout);
   }, [p.events, preview, days]);
 
-  const dayTotals = useMemo(() => days.map((d) => p.events
-    .filter((e) => e.date === d && e.status !== 'skipped')
-    .reduce((a, e) => a + dur(e), 0)), [p.events, days]);
+  const dayTotals = useMemo(() => days.map((d) => unionMinutes(p.events
+    .filter((e) => e.date === d && e.status !== 'skipped'))), [p.events, days]);
 
   const y = (min: number) => ((min - minB) / 60) * hourH;
 
@@ -289,6 +290,7 @@ export default function WeekCalendar(p: Props) {
                   const top = y(Math.max(ev.startMin, minB));
                   const h = Math.max(14, y(Math.min(ev.endMin, maxB)) - top - 2);
                   const dragging = preview?.type === 'drag' && preview.id === ev.id;
+                  const badge = p.badges?.get(ev.id);
                   return (
                     <div
                       key={ev.id}
@@ -297,7 +299,8 @@ export default function WeekCalendar(p: Props) {
                       role="button"
                       aria-label={`${ev.title}, ${fmtTime(ev.startMin)}–${fmtTime(ev.endMin)}`}
                       onKeyDown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); p.onOpenEvent(eventsById.get(ev.id)!); } }}
-                      className={`ev${ev.status === 'skipped' ? ' ev-skipped' : ''}${dragging ? ' is-dragged' : ''}${h < 30 ? ' is-short' : ''}`}
+                      className={`ev${ev.status === 'skipped' ? ' ev-skipped' : ''}${dragging ? ' is-dragged' : ''}${h < 30 ? ' is-short' : ''}${lanes >= 3 && h >= 40 ? ' is-vertical' : ''}${badge === 'cancelled' ? ' is-cancelled' : ''}`}
+                      title={`${ev.title || s?.name || ''}, ${fmtTime(ev.startMin)}–${fmtTime(ev.endMin)}`}
                       style={{
                         ['--c' as string]: s?.color ?? '#8792a2',
                         top,
@@ -307,14 +310,18 @@ export default function WeekCalendar(p: Props) {
                       }}
                     >
                       <div className="ev-inner">
+                        {lanes >= 3 && h >= 40 && <div className="ev-title">{ev.title || s?.name || 'Без названия'}</div>}
                         {h >= 30 && (
                           <div className="ev-time">
                             {fmtTime(ev.startMin)} – {fmtTime(ev.endMin)}
                             {dragging && <span className="ev-dur"> · {fmtDur(ev.endMin - ev.startMin)}</span>}
                           </div>
                         )}
-                        <div className="ev-title">{ev.title || s?.name || 'Без названия'}</div>
+                        {!(lanes >= 3 && h >= 40) && <div className="ev-title">{ev.title || s?.name || 'Без названия'}</div>}
                       </div>
+                      {(badge === 'paid' || badge === 'unpaid') && (
+                        <span className={'ev-pay is-' + badge} title={badge === 'paid' ? 'Оплачено' : 'Есть неоплаченное'} aria-label={badge === 'paid' ? 'Оплачено' : 'Не оплачено'}>₽</span>
+                      )}
                       <div className="ev-resize" data-resize aria-hidden />
                     </div>
                   );

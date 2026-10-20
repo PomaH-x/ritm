@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useSectionLogs } from '../lib/hooks';
+import { loadIncomeByDate } from '../lib/money';
 import { addDays, parseISODate, toISODate } from '../lib/time';
 
 const money = (n: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Math.round(n)) + ' ₽';
@@ -14,12 +16,16 @@ export default function FinanceSummary({ today }: { today: string }) {
 
   const range = period === '30' ? [addDays(today, -29), today] : period === 'month' ? [monthStart, today] : [from, to];
   const logs = useSectionLogs('finance', range[0], range[1]) ?? [];
+  const auto = useLiveQuery(loadIncomeByDate, []);
 
   const s = useMemo(() => {
     let income = 0, expenses = 0, savedDays = 0, incomeDays = 0, days = 0;
-    for (const l of logs) {
-      const v = l.values;
-      const inc = typeof v.income === 'number' ? v.income : 0;
+    // Доход дня: введённый вручную, иначе — из оплат учеников
+    const byDate = new Map(logs.map((l) => [l.date, l]));
+    const dates = new Set([...byDate.keys(), ...[...(auto?.keys() ?? [])].filter((d) => d >= range[0] && d <= range[1])]);
+    for (const date of dates) {
+      const v = byDate.get(date)?.values ?? {};
+      const inc = typeof v.income === 'number' ? v.income : auto?.get(date) ?? 0;
       const exp = typeof v.expenses === 'number' ? v.expenses : 0;
       income += inc;
       expenses += exp;
@@ -29,7 +35,7 @@ export default function FinanceSummary({ today }: { today: string }) {
     }
     const span = Math.max(1, Math.round((parseISODate(range[1]).getTime() - parseISODate(range[0]).getTime()) / 86400000) + 1);
     return { income, expenses, savedDays, incomeDays, days, span };
-  }, [logs, range]);
+  }, [logs, range, auto]);
 
   return (
     <div className="fin">

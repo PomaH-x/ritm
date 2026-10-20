@@ -36,7 +36,21 @@ export default function StudentEditor({ student, source, all, onClose }: {
         <button type="button" className="btn primary" onClick={save}>Сохранить</button>
       </>}>
       <div className="form">
-        <div className="row2">
+        {s.source === 'am' ? (
+          <div className="row2">
+            <label className="field">
+              <span>Имя</span>
+              <input data-autofocus value={s.name} onChange={(e) => {
+                const name = e.target.value;
+                setS((x) => ({ ...x, name, dative: dativeTouched ? x.dative : dativeGuess(name) }));
+              }} />
+            </label>
+            <label className="field">
+              <span>Как писать в отчёте: «продал абонемент …»</span>
+              <input value={s.dative} onChange={(e) => { setDativeTouched(true); set('dative', e.target.value); }} />
+            </label>
+          </div>
+        ) : (
           <label className="field">
             <span>Имя</span>
             <input data-autofocus value={s.name} onChange={(e) => {
@@ -44,11 +58,7 @@ export default function StudentEditor({ student, source, all, onClose }: {
               setS((x) => ({ ...x, name, dative: dativeTouched ? x.dative : dativeGuess(name) }));
             }} />
           </label>
-          <label className="field">
-            <span>Как писать в отчёте: «продал абонемент …»</span>
-            <input value={s.dative} onChange={(e) => { setDativeTouched(true); set('dative', e.target.value); }} />
-          </label>
-        </div>
+        )}
         <div className="field">
           <span>Чей ученик</span>
           <div className="seg">

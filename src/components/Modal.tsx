@@ -9,6 +9,9 @@ interface Props {
   wide?: boolean;
 }
 
+/** Открытые окна по порядку: Escape закрывает только верхнее */
+const stack: object[] = [];
+
 export default function Modal({ title, subtitle, onClose, children, footer, wide }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -17,12 +20,14 @@ export default function Modal({ title, subtitle, onClose, children, footer, wide
   const openedAt = useRef(Date.now());
   closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
+    const me = {};
+    stack.push(me);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && stack[stack.length - 1] === me) closeRef.current(); };
     window.addEventListener('keydown', onKey);
     const prev = document.activeElement as HTMLElement | null;
     const target = ref.current?.querySelector<HTMLElement>('[data-autofocus]') ?? ref.current;
     target?.focus({ preventScroll: true });
-    return () => { window.removeEventListener('keydown', onKey); prev?.focus?.({ preventScroll: true }); };
+    return () => { stack.splice(stack.indexOf(me), 1); window.removeEventListener('keydown', onKey); prev?.focus?.({ preventScroll: true }); };
   }, []);
   return (
     <div className="modal-back"

@@ -137,13 +137,14 @@ export async function materializeAll() {
 
 export type Repeat = { interval: number; weekdays: number[]; until: string | null };
 
-export async function createSeries(e: Pick<CalEvent, 'sphereId' | 'title' | 'date' | 'startMin' | 'endMin' | 'notes'> & { students?: string[] }, r: Repeat) {
+export async function createSeries(e: Pick<CalEvent, 'sphereId' | 'title' | 'date' | 'startMin' | 'endMin' | 'notes'> & { students?: string[]; amKind?: CalEvent['amKind'] }, r: Repeat) {
   const now = Date.now();
   const s: Series = {
     id: uid(), createdAt: now, updatedAt: now, deleted: 0,
     sphereId: e.sphereId, title: e.title, startMin: e.startMin, endMin: e.endMin, notes: e.notes,
     weekdays: r.weekdays.length ? r.weekdays : [weekday(e.date)], interval: Math.max(1, r.interval), startDate: e.date, until: r.until,
     ...(e.students ? { students: e.students } : {}),
+    ...(e.amKind ? { amKind: e.amKind } : {}),
   };
   await db.series.add(s);
   await materializeAll();

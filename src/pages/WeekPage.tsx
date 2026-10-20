@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import WeekCalendar from '../components/WeekCalendar';
 import SlotSheet from '../components/SlotSheet';
 import EventEditor, { type Draft } from '../components/EventEditor';
 import NormsPanel from '../components/NormsPanel';
+import LessonSheet from '../components/LessonSheet';
+import SubForm from '../components/SubForm';
+import { buildLessons, eventBadge, loadMoney, type Lesson } from '../lib/money';
 import { toast } from '../components/Toast';
 import { choose } from '../components/Confirm';
 import SyncButton from '../components/SyncButton';
@@ -12,7 +16,7 @@ import { sportDayStatus } from '../lib/sport';
 import type { Slot } from '../lib/recommend';
 import { weekProgress } from '../lib/stats';
 import { addDays, dayNum, fmtTime, fmtWeekRange, parseISODate, WD_SHORT, weekday, weekDays, weekStartOf } from '../lib/time';
-import type { CalEvent, Sphere } from '../types';
+import type { CalEvent, Sphere, Subscription } from '../types';
 
 export default function WeekPage() {
   const now = useNow();
@@ -40,6 +44,23 @@ export default function WeekPage() {
 
   const [slot, setSlot] = useState<Slot | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [sheet, setSheet] = useState<CalEvent | null>(null);
+  const [subForm, setSubForm] = useState<{ sub?: Subscription; defaults?: Partial<Subscription> } | null>(null);
+
+  // Ученики и деньги: статусы занятий, значки оплаты на карточках
+  const money = useLiveQuery(loadMoney, []);
+  const lessons = useMemo(() => (money ? buildLessons(money, now) : []), [money, now]);
+  const byEvent = useMemo(() => {
+    const m = new Map<string, Lesson[]>();
+    for (const l of lessons) m.set(l.event.id, [...(m.get(l.event.id) ?? []), l]);
+    return m;
+  }, [lessons]);
+  const badges = useMemo(() => {
+    const subs = new Map((money?.subs ?? []).map((s) => [s.id, s]));
+    const out = new Map<string, 'paid' | 'unpaid' | 'cancelled'>();
+    for (const [id, ls] of byEvent) { const b = eventBadge(ls, subs); if (b) out.set(id, b); }
+    return out;
+  }, [byEvent, money]);
 
   const visibleDays = narrow ? [days[dayIdx]] : days;
   const isCurrentWeek = days.includes(now.date);
@@ -80,14 +101,27 @@ export default function WeekPage() {
   const sameRepeat = (a: Repeat | null | undefined, b: Repeat | null | undefined) =>
     (!a && !b) || (!!a && !!b && a.interval === b.interval && a.until === b.until && [...a.weekdays].sort().join() === [...b.weekdays].sort().join());
 
-  const openEvent = async (e: CalEvent) => {
+  const openEvent = (e: CalEvent) => {
+    if (byEvent.has(e.id)) { setSheet(e); return; }
+    void openEditor(e);
+  };
+
+  const openEditor = async (e: CalEvent) => {
     const s = e.seriesId ? await db.series.get(e.seriesId) : undefined;
-    setDraft({ ...e, repeat: s && !s.deleted ? { interval: s.interval, weekdays: s.weekdays, until: s.until } : null });
+    setDraft({
+      ...e,
+      students: e.students ?? s?.students ?? [],
+      amKind: e.amKind ?? s?.amKind,
+      repeat: s && !s.deleted ? { interval: s.interval, weekdays: s.weekdays, until: s.until } : null,
+    });
   };
 
   const saveDraft = async (d: Draft) => {
     const { id, repeat, ...rest } = d;
-    const fields = { sphereId: rest.sphereId, title: rest.title, date: rest.date, startMin: rest.startMin, endMin: rest.endMin, notes: rest.notes };
+    const fields = {
+      sphereId: rest.sphereId, title: rest.title, date: rest.date, startMin: rest.startMin, endMin: rest.endMin, notes: rest.notes,
+      students: rest.students?.length ? rest.students : undefined, amKind: rest.amKind,
+    };
     if (!id) {
       if (repeat) await createSeries(fields, repeat); else await createEvent({ ...fields, status: 'planned' });
       setDraft(null);
@@ -105,13 +139,16 @@ export default function WeekPage() {
     const s = await db.series.get(ev.seriesId);
     const oldRepeat = s && !s.deleted ? { interval: s.interval, weekdays: s.weekdays, until: s.until } : null;
     const repeatChanged = !sameRepeat(repeat, oldRepeat);
-    const changed = repeatChanged || ['sphereId', 'title', 'date', 'startMin', 'endMin', 'notes'].some((k) => (fields as Record<string, unknown>)[k] !== (ev as unknown as Record<string, unknown>)[k]);
+    // Учеников и формат сравниваем с тем, что действует сейчас (у события или у серии)
+    const cur = { ...ev, students: ev.students ?? s?.students, amKind: ev.amKind ?? s?.amKind } as unknown as Record<string, unknown>;
+    const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const changed = repeatChanged || ['sphereId', 'title', 'date', 'startMin', 'endMin', 'notes', 'students', 'amKind'].some((k) => !same((fields as Record<string, unknown>)[k], cur[k]));
     if (!changed) { setDraft(null); return; }
     const scope = repeatChanged
       ? await choose('Изменить повторение', 'Новые правила повтора применятся к этому событию и всем следующим. Прошедшие останутся как были.', [{ key: 'following', label: 'Это и следующие' }])
       : await choose('Изменить повторяющееся событие', 'Изменить только это событие или это и все следующие?', [{ key: 'one', label: 'Только это' }, { key: 'following', label: 'Это и следующие' }]);
     if (!scope) return;
-    if (scope === 'one') await updateEvent(id, fields);
+    if (scope === 'one') await updateEvent(id, { ...fields, students: fields.students ?? [] });
     else {
       await endSeriesFrom(ev.seriesId, ev.date);
       if (repeat) await createSeries(fields, repeat);
@@ -186,12 +223,13 @@ export default function WeekPage() {
           onSelectSlot={setSlot}
           onOpenEvent={openEvent}
           onChangeEvent={change}
+          badges={badges}
         />
       </div>
 
       {!narrow && (
         <aside className="week-side">
-          <NormsPanel spheres={spheres} progress={progress} />
+          <NormsPanel spheres={spheres} progress={progress} events={events} />
         </aside>
       )}
 
@@ -213,6 +251,8 @@ export default function WeekPage() {
           key={draft.id ?? 'new'}
           draft={draft}
           spheres={spheres}
+          people={money?.students}
+          money={money?.m}
           onClose={() => setDraft(null)}
           onSave={saveDraft}
           onDelete={draft.id ? () => removeDraft(draft) : undefined}
@@ -224,6 +264,22 @@ export default function WeekPage() {
         />
       )}
 
+      {sheet && money && (() => {
+        const cur = events.find((e) => e.id === sheet.id) ?? sheet;
+        const ls = byEvent.get(sheet.id) ?? [];
+        if (!ls.length) return null;
+        return (
+          <LessonSheet event={cur} lessons={ls} all={lessons} data={money}
+            onClose={() => setSheet(null)}
+            onEdit={() => { setSheet(null); void openEditor(cur); }}
+            onSellSub={(l) => setSubForm({ defaults: { studentId: l.student.id, start: l.date, kind: l.kind, hours: l.hours } })}
+            onOpenSub={(s) => setSubForm({ sub: s })} />
+        );
+      })()}
+
+      {subForm && money && (
+        <SubForm m={money.m} students={money.students} sub={subForm.sub} defaults={subForm.defaults} onClose={() => setSubForm(null)} />
+      )}
     </div>
   );
 }

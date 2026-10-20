@@ -1,4 +1,4 @@
-import type { Sphere } from '../types';
+import type { CalEvent, Sphere } from '../types';
 import type { Progress } from '../lib/stats';
 import { groupMinutes } from '../lib/stats';
 import { fmtHours } from '../lib/time';
@@ -6,6 +6,8 @@ import { fmtHours } from '../lib/time';
 interface Props {
   spheres: Sphere[];
   progress: Map<string, Progress>;
+  /** События недели — для часов по группам с учётом одновременных занятий */
+  events?: CalEvent[];
   compact?: boolean;
 }
 
@@ -15,9 +17,9 @@ function value(s: Sphere, v: number) {
   return s.normKind === 'count' ? String(v) : hrs(v);
 }
 
-export default function NormsPanel({ spheres, progress, compact }: Props) {
+export default function NormsPanel({ spheres, progress, events, compact }: Props) {
   const normed = spheres.filter((s) => s.normKind !== 'none' && s.normTarget > 0);
-  const groups = groupMinutes(spheres, progress);
+  const groups = groupMinutes(spheres, events ?? []);
   const free = spheres.filter((s) => s.normKind === 'none' && !s.group && (progress.get(s.id)?.minutes ?? 0) > 0);
 
   return (

@@ -102,7 +102,7 @@ export interface KV {
 export type FieldType = 'number' | 'time' | 'bool' | 'check' | 'scale' | 'choice' | 'text' | 'note';
 
 /** Значение, которое можно посчитать само: из расписания или из других полей */
-export type AutoKind = 'sleepHours' | 'sphereMinutes' | 'groupHours' | 'trialsCount';
+export type AutoKind = 'sleepHours' | 'sphereMinutes' | 'groupHours' | 'trialsCount' | 'workIncome';
 
 export interface FieldDef {
   key: string;

@@ -44,13 +44,34 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
   return res;
 }
 
-export function groupMinutes(spheres: Sphere[], progress: Map<string, Progress>): { group: string; minutes: number; color: string }[] {
+/**
+ * Сколько времени занято на самом деле: одновременные занятия считаются один раз.
+ * Марк 16:00–19:00 и Настя 17:30–19:00 в одно время — это 3 часа работы, а не 4,5.
+ */
+export function unionMinutes(list: Pick<CalEvent, 'date' | 'startMin' | 'endMin'>[]): number {
+  const byDay = new Map<string, [number, number][]>();
+  for (const e of list) byDay.set(e.date, [...(byDay.get(e.date) ?? []), [e.startMin, e.endMin]]);
+  let total = 0;
+  for (const spans of byDay.values()) {
+    spans.sort((x, y) => x[0] - y[0]);
+    let [cs, ce] = spans[0];
+    for (const [s, e] of spans.slice(1)) {
+      if (s <= ce) ce = Math.max(ce, e);
+      else { total += ce - cs; [cs, ce] = [s, e]; }
+    }
+    total += ce - cs;
+  }
+  return total;
+}
+
+/** Часы по группам сфер (например, «Работа») с учётом одновременных занятий */
+export function groupMinutes(spheres: Sphere[], events: CalEvent[]): { group: string; minutes: number; color: string }[] {
   const out = new Map<string, { group: string; minutes: number; color: string }>();
   for (const s of spheres) {
-    if (!s.group) continue;
-    const g = out.get(s.group) ?? { group: s.group, minutes: 0, color: s.color };
-    g.minutes += progress.get(s.id)?.minutes ?? 0;
-    out.set(s.group, g);
+    if (!s.group || out.has(s.group)) continue;
+    const ids = new Set(spheres.filter((x) => x.group === s.group).map((x) => x.id));
+    const minutes = unionMinutes(events.filter((e) => e.status !== 'skipped' && e.sphereId && ids.has(e.sphereId)));
+    out.set(s.group, { group: s.group, minutes, color: s.color });
   }
   return [...out.values()];
 }

@@ -73,7 +73,7 @@ export const BUILTIN_SECTIONS: SectionDef[] = [
   {
     key: 'finance', title: 'Финансы', emoji: '💰', color: '#F2C94C', kind: 'finance',
     fields: [
-      n('income', 'Доход', '₽', 100),
+      n('income', 'Доход', '₽', 100, { auto: 'workIncome' }),
       n('expenses', 'Расходы', '₽', 100),
       b('saved', 'Отложил 20%'),
       t('note', 'На что ушло'),

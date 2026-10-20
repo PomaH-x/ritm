@@ -6,7 +6,7 @@ import type { FieldDef, SectionDef } from '../types';
 import { classifiedWarnings, dayData, weekReport, type Bundle } from './report';
 import { resolveSections } from './sections';
 import { exerciseDone, fmtTarget, setsOf, targetFor } from './sport';
-import { dur } from './stats';
+import { unionMinutes } from './stats';
 import { addDays, fmtDayLong, fmtTime, fmtWeekRange, parseISODate, WD_LONG, weekday, weekStartOf } from './time';
 import { PLAN_CONTEXT } from '../coach/plan';
 import { TRIALS, trialsOf, trialText } from './ege';
@@ -141,7 +141,7 @@ export function dayTemplate(b: Bundle, date: string): string {
     .sort((x, y) => x.startMin - y.startMin);
   const tTraining = b.program.find((w) => !w.daily && w.weekdays.includes(twd));
   const tParts = [tTraining ? `тренировка «${tTraining.name}»` : 'ежедневный минимум'];
-  if (work.length) tParts.push(`работа ${ru(Math.round(work.reduce((a, e) => a + dur(e), 0) / 6) / 10)} ч, первое занятие в ${fmtTime(work[0].startMin)}`);
+  if (work.length) tParts.push(`работа ${ru(Math.round(unionMinutes(work) / 6) / 10)} ч, первое занятие в ${fmtTime(work[0].startMin)}`);
   else tParts.push('занятий нет');
   L.push('', `📅 ЗАВТРА — ${WD_LONG[twd - 1]}: ${tParts.join('; ')}`);
 

@@ -351,3 +351,40 @@ export function weeklyCount(series: Series[], studentId: string): number {
   return series.filter((s) => !s.deleted && s.students?.includes(studentId) && (!s.until || s.until >= logicalNow().date))
     .reduce((a, s) => a + s.weekdays.length / Math.max(1, s.interval), 0);
 }
+
+// ---------- Значок оплаты на карточке ----------
+
+export type Badge = 'paid' | 'unpaid' | 'cancelled';
+
+/** Всё отменено — зачёркнуто; кто-то должен (разовое, моё или неоплаченный абонемент) — красный ₽; всё оплачено — зелёный ₽ */
+export function eventBadge(ls: Lesson[], subsById: Map<string, Subscription>): Badge | null {
+  if (!ls.length) return null;
+  if (ls.every((l) => l.status.type === 'cancelled')) return 'cancelled';
+  const live = ls.filter((l) => l.status.type !== 'cancelled' && l.status.type !== 'planned');
+  if (!live.length) return null;
+  const owes = live.some((l) => (l.status.type === 'single' && !l.status.paid) || (l.status.type === 'own' && !l.status.paid)
+    || (l.status.type === 'sub' && !subsById.get(l.status.subId)?.paidDate));
+  return owes ? 'unpaid' : 'paid';
+}
+
+export const money = (n: number) => new Intl.NumberFormat('ru-RU').format(Math.round(n)) + ' ₽';
+
+/** Короткий статус занятия для списков */
+export function statusText(l: Lesson, subsById: Map<string, Subscription>): { text: string; tone: '' | 'ok' | 'bad' } {
+  const st = l.status;
+  switch (st.type) {
+    case 'cancelled': return { text: st.reason ? `отмена: ${st.reason}` : 'отмена', tone: '' };
+    case 'planned': return { text: 'впереди', tone: '' };
+    case 'sub': {
+      const s = subsById.get(st.subId);
+      return { text: `абонемент ${st.n}/${st.size}${s && !s.paidDate ? ', не оплачен' : ''}`, tone: s && !s.paidDate ? 'bad' : 'ok' };
+    }
+    case 'single': return { text: `разовое ${st.tariff ? money(st.tariff.total) : ''}${st.paid ? '' : ', не оплачено'}`, tone: st.paid ? 'ok' : 'bad' };
+    case 'own': return { text: `${money(st.cost)}${st.paid ? (st.via === 'balance' ? ', с баланса' : ', оплачено') : ', не оплачено'}`, tone: st.paid ? 'ok' : 'bad' };
+  }
+}
+
+/** Абонемент, действующий на дату (последний начатый) */
+export function activeSub(d: MoneyData, studentId: string, date: string): Subscription | undefined {
+  return d.subs.filter((s) => s.studentId === studentId && s.start <= date && date <= subEnd(s)).sort((a, b) => b.start.localeCompare(a.start))[0];
+}

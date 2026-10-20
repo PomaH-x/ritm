@@ -1,7 +1,9 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import SectionCard, { filledCount } from '../components/SectionCard';
 import SportCard from '../components/SportCard';
 import FinanceSummary from '../components/FinanceSummary';
+import { loadIncomeByDate } from '../lib/money';
 import TasksCard from '../components/TasksCard';
 import FieldsEditor, { NewSectionModal } from '../components/FieldsEditor';
 import ProgramEditor, { HarderModal } from '../components/ProgramEditor';
@@ -32,7 +34,8 @@ export default function DayPage() {
   const [harder, setHarder] = useState<{ workoutId: string; ex: Exercise } | null>(null);
 
   const sections = useMemo(() => (cfg ? resolveSections(cfg) : []), [cfg]);
-  const ctx = { dayEvents, spheres, trialsCount: trialsOf(logs?.get(TRIALS)).length };
+  const income = useLiveQuery(loadIncomeByDate, []);
+  const ctx = { dayEvents, spheres, trialsCount: trialsOf(logs?.get(TRIALS)).length, workIncome: income?.get(date) };
 
   if (!cfg || !program || !logs || !yLogs) return <div className="page"><p className="muted">Загрузка…</p></div>;
 

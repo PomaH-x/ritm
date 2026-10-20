@@ -1,5 +1,5 @@
 import type { CalEvent, Settings, Sphere } from '../types';
-import { dur, weekProgress } from './stats';
+import { dur, weekProgress, unionMinutes } from './stats';
 import { fmtDur, weekday } from './time';
 
 export interface Slot {
@@ -41,10 +41,10 @@ export function recommend(slot: Slot, spheres: Sphere[], weekEvents: CalEvent[],
 
   const today = weekEvents.filter((e) => e.date === slot.date && e.status !== 'skipped');
   const byId = new Map(spheres.map((s) => [s.id, s]));
-  const busyToday = today.reduce((acc, e) => {
+  const busyToday = unionMinutes(today.filter((e) => {
     const s = e.sphereId ? byId.get(e.sphereId) : undefined;
-    return s && (s.intensity === 'focus' || s.intensity === 'active') ? acc + dur(e) : acc;
-  }, 0);
+    return !!s && (s.intensity === 'focus' || s.intensity === 'active');
+  }));
 
   const top: Suggestion[] = [];
   const skipped: Skipped[] = [];

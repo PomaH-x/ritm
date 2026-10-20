@@ -11,6 +11,7 @@
   --primary: #182033;
   --on-primary: #FFFFFF;
   --danger: #D2463B;
+  --ok: #1E8E4E;
   --now: #E5484D;
   --focus: #3D6FE0;
   --light-zone: rgba(242, 201, 76, 0.07);
@@ -27,7 +28,7 @@
   :root:not([data-theme="light"]) {
     --bg: #121826; --surface: #171E2E; --raised: #1F2739; --line: #2A3349; --line-soft: #1E2638;
     --text: #E6EAF2; --muted: #8E99AF; --faint: #5F6A82; --primary: #E6EAF2; --on-primary: #121826;
-    --danger: #F07167; --now: #FF6B6B; --focus: #8FB0FF; --light-zone: rgba(242, 201, 76, 0.045);
+    --danger: #F07167; --ok: #4CC38A; --now: #FF6B6B; --focus: #8FB0FF; --light-zone: rgba(242, 201, 76, 0.045);
     --ev-mix: 24%; --ev-done-mix: 42%; --ev-text-mix: 28%; --shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
@@ -35,7 +36,7 @@
 :root[data-theme="dark"] {
   --bg: #121826; --surface: #171E2E; --raised: #1F2739; --line: #2A3349; --line-soft: #1E2638;
   --text: #E6EAF2; --muted: #8E99AF; --faint: #5F6A82; --primary: #E6EAF2; --on-primary: #121826;
-  --danger: #F07167; --now: #FF6B6B; --focus: #8FB0FF; --light-zone: rgba(242, 201, 76, 0.045);
+  --danger: #F07167; --ok: #4CC38A; --now: #FF6B6B; --focus: #8FB0FF; --light-zone: rgba(242, 201, 76, 0.045);
   --ev-mix: 24%; --ev-done-mix: 42%; --ev-text-mix: 28%; --shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -690,3 +691,86 @@ a.btn { text-decoration: none; color: inherit; }
   .ev-inner { padding: 4px 4px 4px 7px; }
   .ev-title { font-size: 11.5px; -webkit-line-clamp: 4; text-overflow: ellipsis; }
 }
+
+/* Три и больше занятий одновременно: имя и время пишем вертикально, чтобы помещались */
+.ev.is-vertical .ev-inner {
+  writing-mode: vertical-rl; height: 100%; padding: 7px 3px 6px 5px;
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+}
+.ev.is-vertical .ev-title { font-size: 13px; -webkit-line-clamp: unset; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 100%; }
+.ev.is-vertical .ev-time { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 100%; }
+
+/* ---------- Оплата на карточках и лист занятия ---------- */
+.ev-pay {
+  position: absolute; right: 3px; bottom: 3px; z-index: 1; min-width: 15px; height: 15px; padding: 0 3px;
+  display: grid; place-items: center; border-radius: 8px; font: 700 10.5px/1 var(--font);
+  color: #fff; pointer-events: none;
+}
+.ev-pay.is-paid { background: var(--ok); }
+.ev-pay.is-unpaid { background: var(--danger); }
+.ev.is-short .ev-pay { top: 1px; bottom: auto; height: 13px; min-width: 13px; font-size: 9.5px; }
+.ev.is-cancelled { opacity: .5; background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--c) 14%, transparent) 6px 12px), var(--surface); }
+.ev.is-cancelled .ev-title { text-decoration: line-through; }
+.ok { color: var(--ok); }
+.bad { color: var(--danger); }
+
+.ls-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ls-item { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 8px; }
+.ls-item.is-cancelled { background: var(--raised); }
+.ls-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ls-top b { font-size: 15px; }
+.ls-status { font-size: 13.5px; color: var(--muted); }
+.ls-status .ok, .ls-status .bad { font-weight: 600; }
+.ls-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ls-reason { display: flex; gap: 6px; flex-wrap: wrap; }
+.ls-reason input { flex: 1 1 200px; }
+.ls-when { font-size: 13px; color: var(--muted); }
+
+.sub-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sub-sum > div { background: var(--raised); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; }
+.sub-sum span { font-size: 12px; color: var(--muted); }
+.sub-sum b { font-size: 15px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Ученики: деньги ---------- */
+.st-money { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.st-money:empty { display: none; }
+.st-money .ok, .st-money .bad { font-weight: 600; }
+.st-totals { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 10px; font-size: 14px; color: var(--muted); }
+.st-totals b { font-variant-numeric: tabular-nums; }
+
+.am-card { margin-bottom: 14px; }
+.am-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.am-head h2 { margin: 0; }
+.am-week { display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; }
+.am-week span { min-width: 170px; text-align: center; }
+.am-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.am-sum > div { background: var(--raised); border-radius: 10px; padding: 9px 11px; display: grid; gap: 2px; min-width: 0; }
+.am-sum span { font-size: 12px; color: var(--muted); }
+.am-sum b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.am-sum small { font-size: 12px; color: var(--faint); }
+.am-sum .is-total { background: color-mix(in srgb, var(--text) 8%, var(--raised)); }
+.am-prem { margin-bottom: 10px; }
+.am-warn { margin: 0 0 12px; padding: 8px 12px 8px 28px; border-radius: 8px; background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--text); font-size: 13.5px; display: grid; gap: 3px; }
+.am-text { width: 100%; font: 14px/1.5 var(--font); resize: vertical; }
+@media (max-width: 600px) {
+  .am-sum { grid-template-columns: 1fr 1fr; }
+  .am-week span { min-width: 0; }
+}
+
+.sc-money { margin-bottom: 14px; }
+.sc-big { display: flex; align-items: baseline; gap: 10px; }
+.sc-big span { color: var(--muted); font-size: 14px; }
+.sc-big b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.sc-big.ok b { color: var(--ok); }
+.sc-big.bad b { color: var(--danger); }
+.sc-sec { margin-top: 14px; }
+.sc-list { list-style: none; margin: 6px 0 8px; padding: 0; display: grid; gap: 4px; }
+.sc-line { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line-soft); background: var(--surface); text-align: left; font-size: 13.5px; color: var(--text); }
+button.sc-line:hover { border-color: var(--muted); }
+.sc-line.is-static { border-color: transparent; background: var(--raised); }
+.sc-r { display: flex; align-items: center; gap: 10px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sc-r.ok, .sc-r .ok { color: var(--ok); }
+.sc-r.bad, .sc-r .bad { color: var(--danger); }
+
+.ls-paydate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; font-size: 13.5px; color: var(--muted); }
+.ls-paydate input { width: auto; }
