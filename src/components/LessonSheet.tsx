@@ -119,6 +119,7 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
         <span className="spacer" />
         <button type="button" className="btn primary" onClick={onClose}>Готово</button>
       </>}>
+      <div className="form ls-form">
       <ul className="ls-list">
         {lessons.map((l) => (
           <li key={l.student.id} className={'ls-item' + (l.status.type === 'cancelled' ? ' is-cancelled' : '')}>
@@ -147,6 +148,7 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
           {payDate !== today && <button type="button" className="linklike" onClick={() => setPayDate(today)}>сегодня</button>}
         </label>
       )}
+      </div>
     </Modal>
   );
 }

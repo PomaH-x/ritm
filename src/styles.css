@@ -773,4 +773,6 @@ button.sc-line:hover { border-color: var(--muted); }
 .sc-r.bad, .sc-r .bad { color: var(--danger); }
 
 .ls-paydate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; font-size: 13.5px; color: var(--muted); }
-.ls-paydate input { width: auto; }
+
+.ls-form { gap: 0; }
+.ls-paydate input[type="date"] { width: auto; min-width: 150px; }

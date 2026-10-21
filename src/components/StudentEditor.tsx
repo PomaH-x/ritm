@@ -37,7 +37,7 @@ export default function StudentEditor({ student, source, all, onClose }: {
       </>}>
       <div className="form">
         {s.source === 'am' ? (
-          <div className="row2">
+          <>
             <label className="field">
               <span>Имя</span>
               <input data-autofocus value={s.name} onChange={(e) => {
@@ -46,10 +46,10 @@ export default function StudentEditor({ student, source, all, onClose }: {
               }} />
             </label>
             <label className="field">
-              <span>Как писать в отчёте: «продал абонемент …»</span>
+              <span>Как писать в отчёте: «Продал абонемент …»</span>
               <input value={s.dative} onChange={(e) => { setDativeTouched(true); set('dative', e.target.value); }} />
             </label>
-          </div>
+          </>
         ) : (
           <label className="field">
             <span>Имя</span>
