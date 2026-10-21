@@ -52,6 +52,8 @@ export interface CalEvent extends Base {
   students?: string[];
   /** Формат для тарифа центра, если задан вручную */
   amKind?: LessonKind;
+  /** Все ученики отменили занятие — в часы работы не идёт */
+  cancelled?: 1;
 }
 
 /** Повторяющееся событие: каждые interval недель по выбранным дням */
@@ -223,6 +225,8 @@ export interface Subscription extends Base {
   center: number;
   /** Когда получены деньги; null — ещё не оплачен */
   paidDate: string | null;
+  /** Занятий, проведённых по абонементу до начала учёта (вписывается вручную) */
+  usedBefore?: number;
   note: string;
 }
 
@@ -249,6 +253,8 @@ export interface Payment extends Base {
 export interface Premium extends Base {
   /** Понедельник недели, в которой премия уменьшает дань */
   week: string;
+  /** За какой месяц премия: YYYY-MM */
+  month?: string;
   amount: number;
   note: string;
 }

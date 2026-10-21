@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Modal from './Modal';
 import { toast } from './Toast';
 import { ask } from './Confirm';
-import { amDebt, money, ownBalance, rateFor, removePayment, statusText, subEnd, subUsage, type Lesson, type MoneyData } from '../lib/money';
+import { amDebt, money, ownBalance, rateFor, removePayment, statusText, subEnd, subState, subUsage, type Lesson, type MoneyData } from '../lib/money';
 import { fmtTime, logicalNow, plural } from '../lib/time';
 import type { Student, Subscription } from '../types';
 
@@ -24,7 +24,7 @@ export default function StudentCard({ student, data, lessons, onEdit, onTopUp, o
   const today = logicalNow().date;
   const mine = lessons.filter((l) => l.student.id === student.id);
   const subsById = new Map(data.subs.map((s) => [s.id, s]));
-  const used = subUsage(lessons);
+  const used = subUsage(lessons, data.subs);
   const subs = data.subs.filter((s) => s.studentId === student.id).sort((a, b) => b.start.localeCompare(a.start));
   const topups = data.payments.filter((p) => p.studentId === student.id && p.kind === 'topup').sort((a, b) => b.date.localeCompare(a.date));
   const past = mine.filter((l) => l.status.type !== 'planned').reverse();
@@ -66,11 +66,12 @@ export default function StudentCard({ student, data, lessons, onEdit, onTopUp, o
               {subs.map((s) => {
                 const n = used.get(s.id) ?? 0;
                 const end = subEnd(s);
-                const live = s.start <= today && today <= end && n < s.size;
+                const state = subState(s, n, today);
+                const note = { future: ' · начнётся ' + dmy(s.start).slice(0, 5), active: '', done: ' · все занятия прошли', expired: ' · срок вышел' }[state];
                 return (
                   <li key={s.id}>
                     <button type="button" className="sc-line" onClick={() => onOpenSub(s)}>
-                      <span><b>{s.size} {plural(s.size, 'занятие', 'занятия', 'занятий')}</b> по {String(s.hours).replace('.', ',')} ч · {dmy(s.start)}–{dmy(end)}{live ? '' : <span className="muted"> · завершён</span>}</span>
+                      <span><b>{s.size} {plural(s.size, 'занятие', 'занятия', 'занятий')}</b> по {String(s.hours).replace('.', ',')} ч · {dmy(s.start)}–{dmy(end)}{note && <span className="muted">{note}</span>}</span>
                       <span className="sc-r">
                         <span>{n} из {s.size}</span>
                         {s.paidDate ? <span className="ok">оплачен</span> : <span className="bad">не оплачен</span>}

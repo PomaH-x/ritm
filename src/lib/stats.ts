@@ -21,7 +21,7 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
   const now = logicalNow();
   const res = new Map<string, Progress>(spheres.map((s) => [s.id, { done: 0, planned: 0, minutes: 0 }]));
   for (const e of events) {
-    if (e.status === 'skipped' || !e.sphereId) continue;
+    if (e.status === 'skipped' || e.cancelled || !e.sphereId) continue;
     const s = byId.get(e.sphereId);
     const p = res.get(e.sphereId);
     if (!s || !p) continue;
@@ -34,7 +34,7 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
     for (const s of spheres) {
       const extra = extraDone.get(s.id);
       if (!extra || s.normKind !== 'count') continue;
-      const mine = events.filter((e) => e.sphereId === s.id && e.status !== 'skipped');
+      const mine = events.filter((e) => e.sphereId === s.id && e.status !== 'skipped' && !e.cancelled);
       const doneDays = new Set([...extra, ...mine.filter((e) => isPast(e, now)).map((e) => e.date)]);
       const p = res.get(s.id)!;
       p.done = doneDays.size;
@@ -48,9 +48,10 @@ export function weekProgress(spheres: Sphere[], events: CalEvent[], extraDone?: 
  * Сколько времени занято на самом деле: одновременные занятия считаются один раз.
  * Марк 16:00–19:00 и Настя 17:30–19:00 в одно время — это 3 часа работы, а не 4,5.
  */
-export function unionMinutes(list: Pick<CalEvent, 'date' | 'startMin' | 'endMin'>[]): number {
+export function unionMinutes(list: Pick<CalEvent, 'date' | 'startMin' | 'endMin' | 'cancelled'>[]): number {
   const byDay = new Map<string, [number, number][]>();
-  for (const e of list) byDay.set(e.date, [...(byDay.get(e.date) ?? []), [e.startMin, e.endMin]]);
+  // Занятие, которое отменили все ученики, — не работа
+  for (const e of list) if (!e.cancelled) byDay.set(e.date, [...(byDay.get(e.date) ?? []), [e.startMin, e.endMin]]);
   let total = 0;
   for (const spans of byDay.values()) {
     spans.sort((x, y) => x[0] - y[0]);

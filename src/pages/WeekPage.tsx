@@ -6,7 +6,7 @@ import EventEditor, { type Draft } from '../components/EventEditor';
 import NormsPanel from '../components/NormsPanel';
 import LessonSheet from '../components/LessonSheet';
 import SubForm from '../components/SubForm';
-import { buildLessons, eventBadge, loadMoney, type Lesson } from '../lib/money';
+import { buildLessons, eventBadge, loadMoney, syncAllCancelled, syncCancelled, type Lesson } from '../lib/money';
 import { toast } from '../components/Toast';
 import { choose } from '../components/Confirm';
 import SyncButton from '../components/SyncButton';
@@ -131,7 +131,7 @@ export default function WeekPage() {
     if (!ev) { setDraft(null); return; }
     if (!ev.seriesId) {
       if (repeat) { await deleteEvent(id); await createSeries(fields, repeat); }
-      else await updateEvent(id, fields);
+      else { await updateEvent(id, fields); await syncCancelled(id); }
       setDraft(null);
       return;
     }
@@ -148,7 +148,7 @@ export default function WeekPage() {
       ? await choose('Изменить повторение', 'Новые правила повтора применятся к этому событию и всем следующим. Прошедшие останутся как были.', [{ key: 'following', label: 'Это и следующие' }])
       : await choose('Изменить повторяющееся событие', 'Изменить только это событие или это и все следующие?', [{ key: 'one', label: 'Только это' }, { key: 'following', label: 'Это и следующие' }]);
     if (!scope) return;
-    if (scope === 'one') await updateEvent(id, { ...fields, students: fields.students ?? [] });
+    if (scope === 'one') { await updateEvent(id, { ...fields, students: fields.students ?? [] }); await syncCancelled(id); }
     else {
       await endSeriesFrom(ev.seriesId, ev.date);
       if (repeat) await createSeries(fields, repeat);
@@ -173,6 +173,7 @@ export default function WeekPage() {
   };
 
   useEffect(() => { void materialize(days[0], days[6]); }, [days]);
+  useEffect(() => { void syncAllCancelled(); }, []);
 
   return (
     <div className="week">

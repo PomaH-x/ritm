@@ -150,7 +150,13 @@ function StudentsField({ d, setD, people, money }: { d: Draft; setD: (d: Draft) 
   if (!source && !chosen.length) return null;
   const list = people.filter((p) => !p.archived && (p.source === source || chosen.includes(p.id)))
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  const toggle = (id: string) => setD({ ...d, students: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] });
+  // Название занятия = имена учеников через запятую, пока его не переписали вручную
+  const names = (ids: string[]) => ids.map((id) => people.find((p) => p.id === id)?.name).filter(Boolean).join(', ');
+  const toggle = (id: string) => {
+    const next = chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id];
+    const auto = !d.title.trim() || d.title.trim() === names(chosen);
+    setD({ ...d, students: next, ...(auto ? { title: names(next) } : {}) });
+  };
   const kinds: [LessonKind | undefined, string][] = [[undefined, 'Авто'], ['group', 'Групповое'], ['ind', 'Индивидуальное']];
   return (
     <div className="field">

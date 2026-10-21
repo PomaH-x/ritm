@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Modal from './Modal';
 import { toast } from './Toast';
 import { ask } from './Confirm';
+import { db } from '../db';
 import { addPayment, KIND_LABEL, markLessonPaid, money, ownBalance, rateFor, removePayment, saveSub, setCancel, subEnd, type Lesson, type MoneyData } from '../lib/money';
 import { fmtDayLong, fmtTime, logicalNow } from '../lib/time';
 import type { CalEvent, Subscription } from '../types';
@@ -25,7 +26,19 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
   onClose: () => void;
 }) {
   const today = logicalNow().date;
-  const [payDate, setPayDate] = useState(today);
+  // Дата получения денег: по умолчанию — как у уже отмеченных оплат этого занятия, иначе сегодня
+  const eventPays = data.payments.filter((p) => p.kind === 'lesson' && p.eventId === event.id);
+  const [payDate, setPayDate] = useState(() => eventPays[0]?.date ?? today);
+  const [dateDraft, setDateDraft] = useState(payDate);
+  /** Оплата отмечается выбранной датой, даже если «Сохранить» не нажат */
+  const pickDate = () => { if (dateDraft !== payDate) setPayDate(dateDraft); return dateDraft; };
+  const saveDate = async () => {
+    setPayDate(dateDraft);
+    const moved = eventPays.filter((p) => p.date !== dateDraft);
+    const now = Date.now();
+    for (const p of moved) await db.payments.update(p.id, { date: dateDraft, updatedAt: now });
+    toast(`Деньги получены ${dmy(dateDraft)}${moved.length ? ` · перенесено оплат: ${moved.length}` : ' — так запишутся следующие оплаты'}`);
+  };
   const [reasonFor, setReasonFor] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const subs = new Map(data.subs.map((s) => [s.id, s]));
@@ -80,24 +93,24 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
     }
     if (st.type === 'single') {
       if (st.paid && st.paymentId) btn('unpay', 'Не оплачено', () => removePayment(st.paymentId!));
-      else if (st.tariff) btn('pay', 'Оплатил', async () => { await markLessonPaid(l, payDate); toast(`${l.student.name}: оплата ${money(st.tariff!.total)}`); }, 'btn primary small');
+      else if (st.tariff) btn('pay', 'Оплатил', async () => { await markLessonPaid(l, pickDate()); toast(`${l.student.name}: оплата ${money(st.tariff!.total)}`); }, 'btn primary small');
       btn('sub', 'Оформить абонемент с этого занятия', () => onSellSub(l));
     }
     if (st.type === 'sub') {
       const s = subs.get(st.subId);
-      if (s && !s.paidDate) btn('subpay', 'Абонемент оплачен', async () => { await saveSub({ ...s, paidDate: payDate }); toast(`Абонемент оплачен · тебе ${money(s.teacher)}`); }, 'btn primary small');
+      if (s && !s.paidDate) btn('subpay', 'Абонемент оплачен', async () => { await saveSub({ ...s, paidDate: pickDate() }); toast(`Абонемент оплачен · тебе ${money(s.teacher)}`); }, 'btn primary small');
       if (s) btn('subopen', 'Абонемент…', () => onOpenSub(s));
     }
     if (st.type === 'own') {
       if (st.via === 'payment' && st.paymentId) btn('unpay', 'Не оплачено', () => removePayment(st.paymentId!));
-      else if (!st.paid) btn('pay', 'Оплатил', async () => { await markLessonPaid(l, payDate); toast(`${l.student.name}: оплата ${money(st.cost)}`); }, 'btn primary small');
+      else if (!st.paid) btn('pay', 'Оплатил', async () => { await markLessonPaid(l, pickDate()); toast(`${l.student.name}: оплата ${money(st.cost)}`); }, 'btn primary small');
     }
     if (st.type === 'planned' && l.student.source === 'own') {
       const p = lessonPay(l.student.id);
       if (p) btn('unpay', 'Убрать оплату', () => removePayment(p.id));
       else btn('prepay', 'Оплатил заранее', async () => {
         const cost = Math.round(rateFor(data.m, l.date, l.student) * l.hours);
-        await addPayment({ studentId: l.student.id, date: payDate, amount: cost, income: cost, kind: 'lesson', eventId: event.id });
+        await addPayment({ studentId: l.student.id, date: pickDate(), amount: cost, income: cost, kind: 'lesson', eventId: event.id });
         toast(`${l.student.name}: оплата ${money(cost)}`);
       });
     }
@@ -142,11 +155,12 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
         ))}
       </ul>
       {anyMoney && (
-        <label className="ls-paydate">
+        <div className="ls-paydate">
           <span>Деньги получены</span>
-          <input type="date" value={payDate} onChange={(e) => e.target.value && setPayDate(e.target.value)} />
-          {payDate !== today && <button type="button" className="linklike" onClick={() => setPayDate(today)}>сегодня</button>}
-        </label>
+          <input type="date" value={dateDraft} aria-label="Деньги получены" onChange={(e) => e.target.value && setDateDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && dateDraft !== payDate) { e.preventDefault(); void saveDate(); } }} />
+          {dateDraft !== payDate && <button type="button" className="btn primary small" onClick={() => void saveDate()}>Сохранить</button>}
+        </div>
       )}
       </div>
     </Modal>

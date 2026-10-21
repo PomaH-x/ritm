@@ -124,6 +124,6 @@ export function isPast(e: { date: string; endMin: number }, now = logicalNow()):
 }
 
 /** Сделано = прошло и не помечено пропущенным (старая отметка) */
-export function isDone(e: { date: string; endMin: number; status?: string }, now = logicalNow()): boolean {
-  return e.status !== 'skipped' && isPast(e, now);
+export function isDone(e: { date: string; endMin: number; status?: string; cancelled?: 1 }, now = logicalNow()): boolean {
+  return e.status !== 'skipped' && !e.cancelled && isPast(e, now);
 }

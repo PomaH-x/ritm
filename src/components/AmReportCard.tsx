@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Modal from './Modal';
 import { toast } from './Toast';
 import { amReportText, amWeek, rub, weekTitle } from '../lib/amReport';
-import { money, savePremium, type Lesson, type MoneyData } from '../lib/money';
+import { money, type Lesson, type MoneyData } from '../lib/money';
+import PremiumForm, { monthName } from './PremiumForm';
+import type { Premium } from '../types';
 import { addDays, logicalNow, weekday, weekStartOf } from '../lib/time';
 
 /** По умолчанию — прошлая неделя в понедельник (отчёт за неё ещё могут ждать), иначе текущая; не раньше начала учёта */
@@ -18,18 +20,10 @@ export default function AmReportCard({ data, lessons }: { data: MoneyData; lesso
   const [open, setOpen] = useState(false);
   const w = useMemo(() => amWeek(data, week, lessons), [data, week, lessons]);
   const text = useMemo(() => amReportText(data, w), [data, w]);
-  const prem = data.premiums.find((p) => p.week === week);
-  const [premium, setPremium] = useState('');
-  useEffect(() => { setPremium(prem ? String(prem.amount) : ''); }, [week, prem?.amount]); // eslint-disable-line react-hooks/exhaustive-deps
-  const premN = Math.round(Number(premium) || 0);
-  const premDirty = premN !== (prem?.amount ?? 0);
+  const prems = data.premiums.filter((p) => p.week === week);
+  const [premForm, setPremForm] = useState<{ premium?: Premium } | null>(null);
   const thisWeek = weekStartOf(logicalNow().date);
   const subsSum = w.subs.reduce((a, s) => a + s.center, 0);
-
-  const savePrem = async () => {
-    await savePremium({ id: prem?.id, week, amount: premN, note: prem?.note ?? '' });
-    toast(premN ? `Премия ${money(premN)} — в неделе ${weekTitle(week)}` : 'Премия убрана');
-  };
 
   return (
     <section className="card am-card">
@@ -49,14 +43,14 @@ export default function AmReportCard({ data, lessons }: { data: MoneyData; lesso
         <div className="is-total"><span>Итого дань</span><b>{money(w.total)}</b><small>{w.cancels.length ? `отмен: ${w.cancels.length}` : 'отмен не было'}</small></div>
       </div>
 
-      <div className="field am-prem">
-        <span>Премия от центра — вычитается из дани этой недели</span>
-        <div className="inline">
-          <input type="number" inputMode="numeric" min={0} step={100} value={premium} placeholder="0" style={{ width: 130 }} aria-label="Премия"
-            onChange={(e) => setPremium(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && premDirty) void savePrem(); }} />
-          <span className="muted">₽</span>
-          {premDirty && <button type="button" className="btn ghost small" onClick={savePrem}>Сохранить</button>}
-        </div>
+      <div className="am-prem">
+        {prems.map((p) => (
+          <button key={p.id} type="button" className="sc-line" onClick={() => setPremForm({ premium: p })}>
+            <span>Премия{p.month ? ` за ${monthName(p.month)}` : ''}</span>
+            <span className="sc-r"><b>−{money(p.amount)}</b><span className="muted">изменить</span></span>
+          </button>
+        ))}
+        <button type="button" className="btn ghost small" onClick={() => setPremForm({})}>Внести премию за месяц</button>
       </div>
 
       {w.warnings.length > 0 && <ul className="am-warn">{w.warnings.map((x) => <li key={x}>{x}</li>)}</ul>}
@@ -65,6 +59,7 @@ export default function AmReportCard({ data, lessons }: { data: MoneyData; lesso
       <div className="btn-row">
         <button type="button" className="btn primary" onClick={() => setOpen(true)}>Подготовить отчёт</button>
       </div>
+      {premForm && <PremiumForm premium={premForm.premium} week={week} trackFrom={data.m.trackFrom} onClose={() => setPremForm(null)} />}
       {open && <ReportText text={text} title={`Отчёт · ${weekTitle(week)}`} total={rub(w.total)} onClose={() => setOpen(false)} />}
     </section>
   );

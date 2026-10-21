@@ -28,6 +28,7 @@ export default function SubForm({ m, students, sub, defaults, onClose }: {
   const [paid, setPaid] = useState(!!sub?.paidDate);
   const [paidDate, setPaidDate] = useState(sub?.paidDate ?? today);
   const [extra, setExtra] = useState(sub?.extraDays ?? 0);
+  const [before, setBefore] = useState(sub?.usedBefore ?? 0);
 
   const realDays = size === 4 ? 30 : days;
   const tr = useMemo(() => tariffFor(m, start, kind, hours, size === 4 ? 'sub4' : 'sub8'), [m, start, kind, hours, size]);
@@ -40,7 +41,7 @@ export default function SubForm({ m, students, sub, defaults, onClose }: {
     const base = sub
       ? { ...sub, studentId, size, days: realDays, start, kind, hours, extraDays: extra, total: tr.total, teacher: tr.teacher, center: tr.center }
       : newSub(m, { studentId, size, days: realDays, start, kind, hours })!;
-    await saveSub({ ...base, extraDays: extra, paidDate: paid ? paidDate : null });
+    await saveSub({ ...base, extraDays: extra, usedBefore: Math.min(size, before) || undefined, paidDate: paid ? paidDate : null });
     toast(sub ? 'Абонемент сохранён' : 'Абонемент оформлен');
     onClose();
   };
@@ -121,6 +122,15 @@ export default function SubForm({ m, students, sub, defaults, onClose }: {
           </div>
           {paid && <p className="hint">В доход дня оплаты пойдёт твоя доля — {tr ? money(tr.teacher) : '—'}.</p>}
         </div>
+
+        <label className="field" style={{ maxWidth: 360 }}>
+          <span>Уже проведено занятий вне учёта</span>
+          <input type="number" inputMode="numeric" min={0} max={size} value={before || ''} placeholder="0"
+            onChange={(e) => setBefore(Math.max(0, Math.min(size, Math.round(Number(e.target.value) || 0))))} />
+          <span className="hint">
+            {m.trackFrom ? `Приложение считает занятия с ${dmy(m.trackFrom)}. ` : ''}Если часть занятий по абонементу прошла раньше, впиши сколько — счёт продолжится с {before + 1}-го.
+          </span>
+        </label>
 
         {sub && (
           <label className="field" style={{ maxWidth: 300 }}>

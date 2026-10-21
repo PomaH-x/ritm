@@ -183,7 +183,8 @@ export function buildLessons(d: MoneyData, now = logicalNow()): Lesson[] {
   const subsBy = new Map<string, Subscription[]>();
   for (const s of d.subs) subsBy.set(s.studentId, [...(subsBy.get(s.studentId) ?? []), s]);
   for (const list of subsBy.values()) list.sort((a, b) => a.start.localeCompare(b.start));
-  const used = new Map<string, number>();
+  // Занятия, проведённые по абонементу до начала учёта, вписываются вручную
+  const used = new Map<string, number>(d.subs.map((s) => [s.id, Math.min(s.size, s.usedBefore ?? 0)]));
   const credit = new Map<string, number>();
   for (const p of d.payments) if (p.kind === 'topup') credit.set(p.studentId, (credit.get(p.studentId) ?? 0) + p.amount);
 
@@ -207,7 +208,10 @@ export function buildLessons(d: MoneyData, now = logicalNow()): Lesson[] {
       if (!isPast(e, now)) { out.push({ ...base, status: { type: 'planned' } }); continue; }
 
       if (student.source === 'am') {
-        const sub = (subsBy.get(sid) ?? []).find((s) => s.start <= e.date && e.date <= subEnd(s) && (used.get(s.id) ?? 0) < s.size);
+        // Подходящий абонемент: сначала тот же формат и длительность (у ученика может быть два предмета), потом любой
+        const open = (subsBy.get(sid) ?? []).filter((s) => s.start <= e.date && e.date <= subEnd(s) && (used.get(s.id) ?? 0) < s.size);
+        const same = (s: Subscription) => Math.abs(s.hours - hours) < 0.01;
+        const sub = open.find((s) => same(s) && s.kind === kind) ?? open.find(same) ?? open[0];
         if (sub) {
           const n = (used.get(sub.id) ?? 0) + 1;
           used.set(sub.id, n);
@@ -233,11 +237,26 @@ export function buildLessons(d: MoneyData, now = logicalNow()): Lesson[] {
   return out;
 }
 
-/** Сколько занятий использовано в каждом абонементе */
-export function subUsage(lessons: Lesson[]): Map<string, number> {
-  const m = new Map<string, number>();
+/** Сколько занятий использовано в каждом абонементе (с учётом вписанных вручную) */
+export function subUsage(lessons: Lesson[], subs: Subscription[] = []): Map<string, number> {
+  const m = new Map<string, number>(subs.map((s) => [s.id, Math.min(s.size, s.usedBefore ?? 0)]));
   for (const l of lessons) if (l.status.type === 'sub') m.set(l.status.subId, Math.max(m.get(l.status.subId) ?? 0, l.status.n));
   return m;
+}
+
+/** Состояние абонемента на дату */
+export function subState(s: Subscription, used: number, today: string): 'future' | 'active' | 'done' | 'expired' {
+  if (s.start > today) return 'future';
+  if (used >= s.size) return 'done';
+  if (subEnd(s) < today) return 'expired';
+  return 'active';
+}
+
+/** Последняя дата, когда ученик платил (оплата занятия или пополнение) */
+export function lastPaid(d: MoneyData, studentId: string): string | null {
+  let last: string | null = null;
+  for (const p of d.payments) if (p.studentId === studentId && (!last || p.date > last)) last = p.date;
+  return last;
 }
 
 /** Баланс моего ученика: внесено минус стоимость проведённых занятий */
@@ -262,6 +281,25 @@ export async function setCancel(e: CalEvent, studentId: string, cancelled: boole
   const now = Date.now();
   const cur = await db.marks.get(id);
   await db.marks.put({ id, eventId: e.id, studentId, date: e.date, cancelled: cancelled ? 1 : 0, reason, createdAt: cur?.createdAt ?? now, updatedAt: now, deleted: 0 });
+  await syncCancelled(e.id);
+}
+
+/** Проверить все занятия с отменами (после обновления приложения и синхронизации) */
+export async function syncAllCancelled() {
+  const ids = new Set((await db.marks.toArray()).map((m) => m.eventId));
+  for (const ev of await db.events.filter((e) => !!e.cancelled).toArray()) ids.add(ev.id);
+  for (const id of ids) await syncCancelled(id);
+}
+
+/** Если занятие отменили все ученики — помечаем само событие, чтобы оно не шло в часы работы */
+export async function syncCancelled(eventId: string) {
+  const ev = await db.events.get(eventId);
+  if (!ev) return;
+  const s = ev.seriesId ? await db.series.get(ev.seriesId) : undefined;
+  const ids = ev.students ?? s?.students ?? [];
+  const marks = await db.marks.where('eventId').equals(eventId).toArray();
+  const all = ids.length > 0 && ids.every((sid) => marks.some((m) => m.studentId === sid && !m.deleted && m.cancelled));
+  if (all !== !!ev.cancelled) await db.events.update(eventId, { cancelled: all ? 1 : undefined, updatedAt: Date.now() });
 }
 
 export async function addPayment(p: Omit<Payment, 'id' | 'createdAt' | 'updatedAt' | 'deleted'>) {

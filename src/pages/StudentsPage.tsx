@@ -6,7 +6,7 @@ import StudentCard from '../components/StudentCard';
 import SubForm from '../components/SubForm';
 import TopUpForm from '../components/TopUpForm';
 import AmReportCard from '../components/AmReportCard';
-import { activeSub, amDebt, buildLessons, loadMoney, money, ownBalance, rateFor, subEnd, subUsage, weeklyCount } from '../lib/money';
+import { amDebt, buildLessons, lastPaid, loadMoney, money, ownBalance, rateFor, subEnd, subState, subUsage, weeklyCount } from '../lib/money';
 import { useNow } from '../lib/hooks';
 import { logicalNow } from '../lib/time';
 import type { Student, StudentSource, Subscription } from '../types';
@@ -30,13 +30,23 @@ export default function StudentsPage() {
   const now = useNow();
   const data = useLiveQuery(loadMoney, []);
   const lessons = useMemo(() => (data ? buildLessons(data, now) : []), [data, now]);
-  const used = useMemo(() => subUsage(lessons), [lessons]);
+  const used = useMemo(() => subUsage(lessons, data?.subs), [lessons, data]);
 
   const pick = (t: StudentSource) => { setTab(t); try { localStorage.setItem('ritm:students-tab', t); } catch { /* ок */ } };
   if (!data) return <div className="page"><p className="muted">Загрузка…</p></div>;
   const { series, m } = data;
   const students = [...data.students].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const balance = new Map(students.filter((s) => s.source === 'own').map((s) => [s.id, ownBalance(data, lessons, s.id)]));
+  const paidAt = new Map(students.map((s) => [s.id, lastPaid(data, s.id)]));
+  // Мои: сверху должники (больший долг выше), дальше — кто платил недавно, внизу — давно или ни разу
+  const ownOrder = (a: Student, b: Student) => {
+    const da = Math.min(0, balance.get(a.id) ?? 0), db = Math.min(0, balance.get(b.id) ?? 0);
+    if (da !== db) return da - db;
+    const pa = paidAt.get(a.id) ?? '', pb = paidAt.get(b.id) ?? '';
+    return pb.localeCompare(pa) || a.name.localeCompare(b.name, 'ru');
+  };
   const list = students.filter((s) => s.source === tab && !s.archived);
+  if (tab === 'own') list.sort(ownOrder);
   const archived = students.filter((s) => s.source === tab && s.archived);
   const count = (t: StudentSource) => students.filter((s) => s.source === t && !s.archived).length;
   const today = logicalNow().date;
@@ -44,15 +54,20 @@ export default function StudentsPage() {
 
   /** Деньги в строке списка: абонемент и долг — у учеников центра, баланс — у моих */
   const moneyLine = (s: Student) => {
+    const short = (d: string) => d.split('-').reverse().slice(0, 2).join('.');
     if (s.source === 'own') {
-      const b = ownBalance(data, lessons, s.id);
-      return b < 0 ? <span className="bad">долг {money(-b)}</span> : b > 0 ? <span className="ok">+{money(b)}</span> : null;
+      const b = balance.get(s.id) ?? 0;
+      const p = paidAt.get(s.id);
+      return <>
+        {b < 0 ? <span className="bad">долг {money(-b)}</span> : b > 0 ? <span className="ok">+{money(b)}</span> : null}
+        {p && <span>платил {short(p)}</span>}
+      </>;
     }
-    const sub = activeSub(data, s.id, today);
-    const n = sub ? used.get(sub.id) ?? 0 : 0;
+    // Абонементов может быть несколько — по разным предметам
+    const subs = data.subs.filter((x) => x.studentId === s.id && subState(x, used.get(x.id) ?? 0, today) !== 'done' && subState(x, used.get(x.id) ?? 0, today) !== 'expired');
     const debt = amDebt(data, lessons, s.id);
     return <>
-      {sub && n < sub.size && <span>абонемент {n}/{sub.size} до {subEnd(sub).split('-').reverse().slice(0, 2).join('.')}</span>}
+      {subs.map((x) => <span key={x.id}>абонемент {used.get(x.id) ?? 0}/{x.size}{x.start > today ? ` с ${short(x.start)}` : ` до ${short(subEnd(x))}`}</span>)}
       {debt > 0 && <span className="bad">не оплачено {money(debt)}</span>}
     </>;
   };
