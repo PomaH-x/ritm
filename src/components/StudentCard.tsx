@@ -67,15 +67,14 @@ export default function StudentCard({ student, data, lessons, onEdit, onTopUp, o
                 const n = used.get(s.id) ?? 0;
                 const end = subEnd(s);
                 const state = subState(s, n, today);
-                const note = { future: ' · начнётся ' + dmy(s.start).slice(0, 5), active: '', done: ' · все занятия прошли', expired: ' · срок вышел' }[state];
+                const note = { future: 'начнётся ' + dmy(s.start).slice(0, 5), active: 'действует', done: 'все занятия прошли', expired: 'срок вышел' }[state];
                 return (
                   <li key={s.id}>
-                    <button type="button" className="sc-line" onClick={() => onOpenSub(s)}>
-                      <span><b>{s.size} {plural(s.size, 'занятие', 'занятия', 'занятий')}</b> по {String(s.hours).replace('.', ',')} ч · {dmy(s.start)}–{dmy(end)}{note && <span className="muted">{note}</span>}</span>
-                      <span className="sc-r">
-                        <span>{n} из {s.size}</span>
-                        {s.paidDate ? <span className="ok">оплачен</span> : <span className="bad">не оплачен</span>}
-                      </span>
+                    <button type="button" className={'sc-line sc-sub-line' + (state === 'done' || state === 'expired' ? ' is-past' : '')} onClick={() => onOpenSub(s)}>
+                      <span className="sc-sub-title"><b>{s.size} {plural(s.size, 'занятие', 'занятия', 'занятий')}</b> по {String(s.hours).replace('.', ',')} ч</span>
+                      <span className="sc-sub-count">{n} из {s.size}</span>
+                      <span className="sc-sub-dates">{dmy(s.start)} – {dmy(end)} · {note}</span>
+                      {s.paidDate ? <span className="sc-sub-pay ok">оплачен {dmy(s.paidDate).slice(0, 5)}</span> : <span className="sc-sub-pay bad">не оплачен</span>}
                     </button>
                   </li>
                 );

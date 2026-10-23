@@ -4,7 +4,7 @@ import { toast } from './Toast';
 import { ask } from './Confirm';
 import { db } from '../db';
 import { addPayment, KIND_LABEL, markLessonPaid, money, ownBalance, rateFor, removePayment, saveSub, setCancel, subEnd, type Lesson, type MoneyData } from '../lib/money';
-import { fmtDayLong, fmtTime, logicalNow } from '../lib/time';
+import { fmtDayLong, fmtTime } from '../lib/time';
 import type { CalEvent, Subscription } from '../types';
 
 const dmy = (d: string) => d.split('-').reverse().join('.');
@@ -25,19 +25,25 @@ export default function LessonSheet({ event, lessons, all, data, onEdit, onSellS
   onOpenSub: (s: Subscription) => void;
   onClose: () => void;
 }) {
-  const today = logicalNow().date;
-  // Дата получения денег: по умолчанию — как у уже отмеченных оплат этого занятия, иначе сегодня
+  // Дата получения денег: как у уже отмеченных оплат этого занятия, иначе — день занятия
   const eventPays = data.payments.filter((p) => p.kind === 'lesson' && p.eventId === event.id);
-  const [payDate, setPayDate] = useState(() => eventPays[0]?.date ?? today);
+  // Абонементы, по которым идут ученики этого занятия и которые уже отмечены оплаченными
+  const paidSubs = [...new Set(lessons.flatMap((l) => (l.status.type === 'sub' ? [l.status.subId] : [])))]
+    .map((id) => data.subs.find((s) => s.id === id)).filter((s): s is Subscription => !!s?.paidDate);
+  const [payDate, setPayDate] = useState(() => eventPays[0]?.date ?? paidSubs[0]?.paidDate ?? event.date);
   const [dateDraft, setDateDraft] = useState(payDate);
   /** Оплата отмечается выбранной датой, даже если «Сохранить» не нажат */
   const pickDate = () => { if (dateDraft !== payDate) setPayDate(dateDraft); return dateDraft; };
+  /** «Сохранить»: уже отмеченные оплаты этого занятия (и оплата абонемента) переезжают на выбранную дату */
   const saveDate = async () => {
-    setPayDate(dateDraft);
-    const moved = eventPays.filter((p) => p.date !== dateDraft);
     const now = Date.now();
-    for (const p of moved) await db.payments.update(p.id, { date: dateDraft, updatedAt: now });
-    toast(`Деньги получены ${dmy(dateDraft)}${moved.length ? ` · перенесено оплат: ${moved.length}` : ' — так запишутся следующие оплаты'}`);
+    const pays = eventPays.filter((p) => p.date !== dateDraft);
+    const subsMoved = paidSubs.filter((s) => s.paidDate !== dateDraft);
+    for (const p of pays) await db.payments.update(p.id, { date: dateDraft, updatedAt: now });
+    for (const s of subsMoved) await db.subs.update(s.id, { paidDate: dateDraft, updatedAt: now });
+    setPayDate(dateDraft);
+    const n = pays.length + subsMoved.length;
+    toast(n ? `Деньги получены ${dmy(dateDraft)} · перенесено оплат: ${n}` : `Дата ${dmy(dateDraft)} — с ней запишутся оплаты этого занятия`);
   };
   const [reasonFor, setReasonFor] = useState<string | null>(null);
   const [reason, setReason] = useState('');

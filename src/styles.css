@@ -778,3 +778,10 @@ button.sc-line:hover { border-color: var(--muted); }
 .ls-paydate input[type="date"] { width: auto; min-width: 150px; }
 .am-prem { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
 .am-prem .sc-line { max-width: 420px; }
+/* Строка абонемента: два ряда — что и сколько; сроки и оплата */
+.sc-line.sc-sub-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; align-items: baseline; }
+.sc-sub-title { min-width: 0; }
+.sc-sub-count { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.sc-sub-dates { font-size: 12.5px; color: var(--muted); min-width: 0; }
+.sc-sub-pay { font-size: 12.5px; text-align: right; white-space: nowrap; }
+.sc-sub-line.is-past { opacity: .7; }
